@@ -799,6 +799,7 @@ struct EventListView: View {
     private enum Metrics {
         static let timeLaneWidth: CGFloat = 46
         static let contentSpacing: CGFloat = 8
+        static let allDayMaximumHeight: CGFloat = 88
         static let markerDotSize: CGFloat = 8
         static let markerChipHeight: CGFloat = 18
         static let markerChipHorizontalPadding: CGFloat = 6
@@ -835,22 +836,72 @@ struct EventListView: View {
             }
             .frame(height: 60)
         } else {
-            ScrollViewReader { proxy in
-                ScrollView(.vertical) {
-                    dayTimelineContent
+            VStack(alignment: .leading, spacing: 0) {
+                if !dayTimelineLayout.allDayItems.isEmpty {
+                    pinnedAllDaySection
                 }
-                .onAppear {
-                    timeRefreshCoordinator.refreshNow()
-                    scrollToInitialTimelineContext(using: proxy)
+
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical) {
+                        dayTimelineContent
+                    }
+                    .accessibilityIdentifier("calendar-popover-day-timeline-scroll")
+                    .onAppear {
+                        timeRefreshCoordinator.refreshNow()
+                        scrollToInitialTimelineContext(using: proxy)
+                    }
+                    .onChange(of: selectedDate) { _, _ in
+                        scrollToInitialTimelineContext(using: proxy)
+                    }
+                    .onChange(of: items.map(\.selectionIdentifier)) { _, _ in
+                        scrollToInitialTimelineContext(using: proxy)
+                    }
                 }
-                .onChange(of: selectedDate) { _, _ in
-                    scrollToInitialTimelineContext(using: proxy)
-                }
-                .onChange(of: items.map(\.selectionIdentifier)) { _, _ in
-                    scrollToInitialTimelineContext(using: proxy)
-                }
+                .padding(.top, dayTimelineLayout.allDayItems.isEmpty ? 0 : Metrics.contentSpacing)
+                .layoutPriority(-1)
             }
         }
+    }
+
+    private var pinnedAllDaySection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            allDaySectionHeader
+
+            ViewThatFits(in: .vertical) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(dayTimelineLayout.allDayItems) { item in
+                        itemButton(item, timelineState: .regular)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(dayTimelineLayout.allDayItems) { item in
+                            itemButton(item, timelineState: .regular)
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(height: allDayItemsMaximumHeight)
+                .scrollBounceBehavior(.basedOnSize)
+            }
+            .frame(maxHeight: allDayItemsMaximumHeight, alignment: .top)
+        }
+        .padding(.top, 4)
+        .layoutPriority(1)
+        .accessibilityIdentifier("calendar-popover-all-day-region")
+    }
+
+    private var allDaySectionHeader: some View {
+        Text(L("All Day"))
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var allDayItemsMaximumHeight: CGFloat {
+        max(Metrics.allDayMaximumHeight - 31, 0)
     }
 
     private var dayTimelineContent: some View {
@@ -861,10 +912,6 @@ struct EventListView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
-            }
-
-            if !dayTimelineLayout.allDayItems.isEmpty {
-                auxiliarySection(title: L("All Day"), items: dayTimelineLayout.allDayItems)
             }
 
             if !dayTimelineLayout.untimedItems.isEmpty {
