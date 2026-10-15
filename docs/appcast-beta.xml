@@ -7,6 +7,15 @@
         <language>zh-CN</language>
 
         <item>
+            <title>Version 0.2.6</title>
+            <pubDate>Thu, 15 Oct 2026 03:15:41 +0000</pubDate>
+            <sparkle:version>02699</sparkle:version>
+            <sparkle:shortVersionString>0.2.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description>&lt;h2&gt;CalendarPro 0.2.6&lt;/h2&gt;&lt;h4&gt;Added&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;compact all-day events&lt;/li&gt;&lt;/ul&gt;&lt;h4&gt;Fixed&lt;/h4&gt;&lt;ul&gt;&lt;li&gt;pin all-day events while scrolling&lt;/li&gt;&lt;/ul&gt;</description>
+            <enclosure url="https://github.com/yelog/calendar-pro/releases/download/v0.2.6/CalendarPro-0.2.6-universal.dmg" length="7727385" type="application/octet-stream" sparkle:edSignature="IVPqlNFuLQf4YOKIHFIt/kVmoHzDlioO41r5lAzHUu0pnA27O2uJ0RYtHIwDl88gADvbjJ0rCoCkmZcQziOzCQ==" />
+        </item>
+        <item>
             <title>Version 0.2.5</title>
             <pubDate>Thu, 08 Oct 2026 09:51:05 +0000</pubDate>
             <sparkle:version>02599</sparkle:version>
