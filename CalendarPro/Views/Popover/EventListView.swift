@@ -799,7 +799,8 @@ struct EventListView: View {
     private enum Metrics {
         static let timeLaneWidth: CGFloat = 46
         static let contentSpacing: CGFloat = 8
-        static let allDayMaximumHeight: CGFloat = 88
+        static let allDayRowHeight: CGFloat = 28
+        static let allDayRowSpacing: CGFloat = 6
         static let markerDotSize: CGFloat = 8
         static let markerChipHeight: CGFloat = 18
         static let markerChipHorizontalPadding: CGFloat = 6
@@ -864,31 +865,23 @@ struct EventListView: View {
     }
 
     private var pinnedAllDaySection: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let allDayItems = dayTimelineLayout.allDayItems
+
+        return HStack(alignment: .center, spacing: Metrics.contentSpacing) {
             allDaySectionHeader
 
-            ViewThatFits(in: .vertical) {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(dayTimelineLayout.allDayItems) { item in
-                        itemButton(item, timelineState: .regular)
-                    }
-                }
-                .fixedSize(horizontal: false, vertical: true)
+            if let firstItem = allDayItems.first {
+                HStack(spacing: Metrics.allDayRowSpacing) {
+                    compactAllDayButton(for: firstItem)
 
-                ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(dayTimelineLayout.allDayItems) { item in
-                            itemButton(item, timelineState: .regular)
-                        }
+                    if allDayItems.count > 1 {
+                        allDayOverflowMenu(for: Array(allDayItems.dropFirst()))
                     }
-                    .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(height: allDayItemsMaximumHeight)
-                .scrollBounceBehavior(.basedOnSize)
             }
-            .frame(maxHeight: allDayItemsMaximumHeight, alignment: .top)
         }
         .padding(.top, 4)
+        .frame(maxWidth: .infinity, minHeight: Metrics.allDayRowHeight + 4, maxHeight: Metrics.allDayRowHeight + 4, alignment: .topLeading)
         .layoutPriority(1)
         .accessibilityIdentifier("calendar-popover-all-day-region")
     }
@@ -897,11 +890,93 @@ struct EventListView: View {
         Text(L("All Day"))
             .font(.system(size: 11, weight: .semibold, design: .rounded))
             .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(width: Metrics.timeLaneWidth, alignment: .trailing)
     }
 
-    private var allDayItemsMaximumHeight: CGFloat {
-        max(Metrics.allDayMaximumHeight - 31, 0)
+    @ViewBuilder
+    private func compactAllDayButton(for item: CalendarItem) -> some View {
+        if case .event(let event) = item {
+            let isSelected = selectedEventIdentifier == event.selectionIdentifier
+            let accentColor = Color(nsColor: event.calendar.color)
+
+            Button {
+                onSelectEvent(event)
+            } label: {
+                HStack(spacing: 6) {
+                    Capsule()
+                        .fill(event.isCanceled ? accentColor.opacity(0.5) : accentColor)
+                        .frame(width: 3)
+                        .accessibilityHidden(true)
+
+                    Text(event.title ?? L("Untitled"))
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .strikethrough(event.isCanceled)
+                        .foregroundStyle(event.isCanceled ? Color.secondary : Color.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, minHeight: Metrics.allDayRowHeight, maxHeight: Metrics.allDayRowHeight)
+                .background {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(accentColor.opacity(isSelected ? 0.2 : 0.09))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(accentColor.opacity(isSelected ? 0.5 : 0.18), lineWidth: 1)
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help(allDayEventHelp(for: event))
+            .accessibilityLabel(allDayEventHelp(for: event))
+            .accessibilityIdentifier("calendar-popover-all-day-event-\(event.selectionIdentifier)")
+        }
+    }
+
+    private func allDayOverflowMenu(for items: [CalendarItem]) -> some View {
+        Menu {
+            ForEach(items) { item in
+                if case .event(let event) = item {
+                    Button {
+                        onSelectEvent(event)
+                    } label: {
+                        Label(
+                            allDayMenuTitle(for: event),
+                            systemImage: selectedEventIdentifier == event.selectionIdentifier ? "checkmark" : "calendar"
+                        )
+                    }
+                    .accessibilityIdentifier("calendar-popover-all-day-event-\(event.selectionIdentifier)")
+                }
+            }
+        } label: {
+            Text("+\(items.count)")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 5)
+                .frame(minHeight: Metrics.allDayRowHeight)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .help(LF("Show %d more all-day events", items.count))
+        .accessibilityLabel(LF("Show %d more all-day events", items.count))
+        .accessibilityIdentifier("calendar-popover-all-day-overflow")
+    }
+
+    private func allDayMenuTitle(for event: EKEvent) -> String {
+        let title = event.title ?? L("Untitled")
+        let titleAndCalendar = LF("%1$@ — %2$@", title, event.calendar.title)
+        return event.isCanceled ? "\(titleAndCalendar) — \(L("Canceled"))" : titleAndCalendar
+    }
+
+    private func allDayEventHelp(for event: EKEvent) -> String {
+        let title = event.title ?? L("Untitled")
+        let status = event.isCanceled ? " — \(L("Canceled"))" : ""
+        return "\(title), \(event.calendar.title), \(L("All Day"))\(status)"
     }
 
     private var dayTimelineContent: some View {
