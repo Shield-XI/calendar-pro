@@ -304,6 +304,138 @@ final class EventService: ObservableObject {
         }
     }
     
+    /// 获取 now 起到 windowEnd 之间的未来日程（事件 + 可选的有到期时间的未完成提醒）。
+    /// - Parameters:
+    ///   - now: 窗口起点，取当前时间；当天已结束的事件会被过滤
+    ///   - windowEnd: 窗口终点（now + N 天）
+    ///   - enabledCalendarIDs: 参与聚合的日历 ID，空数组表示全部日历
+    ///   - includeReminders: 是否纳入有到期时间的未完成提醒
+    ///   - enabledReminderCalendarIDs: 参与聚合的提醒列表 ID，空数组表示全部
+    /// - Returns: 按开始时间升序的统一条目
+    /// - Note: 事件窗口从当天零点起查、再按 endDate > now 过滤，保证当天进行中
+    ///   与全天事件保留；开始于今天之前的多天事件不纳入。递归提醒按“天”近似
+    ///   展开（见 reminder(_:isDueWithin:windowEnd:calendar:) 的限制说明）。
+    func fetchUpcomingCalendarItems(
+        now: Date,
+        windowEnd: Date,
+        enabledCalendarIDs: [String],
+        includeReminders: Bool,
+        enabledReminderCalendarIDs: [String]
+    ) async -> [CalendarItem] {
+        var items: [CalendarItem] = []
+        let calendar = Calendar.current
+        let windowStart = calendar.startOfDay(for: now)
+
+        if isAuthorized {
+            let predicate = eventStore.predicateForEvents(
+                withStart: windowStart,
+                end: windowEnd,
+                calendars: nil
+            )
+            let events = eventStore.events(matching: predicate).filter { event in
+                guard event.endDate > now else { return false }
+                return enabledCalendarIDs.isEmpty
+                    || enabledCalendarIDs.contains(event.calendar.calendarIdentifier)
+            }
+            items.append(contentsOf: events.map { .event($0) })
+        }
+
+        if includeReminders {
+            let reminders = await fetchUpcomingReminders(
+                from: windowStart,
+                through: windowEnd,
+                enabledCalendarIDs: enabledReminderCalendarIDs
+            )
+            items.append(contentsOf: reminders.map { .reminder($0) })
+        }
+
+        return items.sorted {
+            ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture)
+        }
+    }
+
+    /// 拉取窗口内未完成且有到期时间的提醒，并按 calendarItemIdentifier 去重。
+    /// 谓词起始用 nil 兜住基准到期日早于窗口的递归提醒，再在本地按窗口过滤，
+    /// 与 fetchReminders 的处理思路一致。
+    private func fetchUpcomingReminders(
+        from windowStart: Date,
+        through windowEnd: Date,
+        enabledCalendarIDs: [String]
+    ) async -> [EKReminder] {
+        guard remindersAuthorized else { return [] }
+
+        let calendarsToFetch: [EKCalendar]
+        if enabledCalendarIDs.isEmpty {
+            calendarsToFetch = reminderCalendars
+        } else {
+            calendarsToFetch = reminderCalendars.filter {
+                enabledCalendarIDs.contains($0.calendarIdentifier)
+            }
+        }
+
+        guard !calendarsToFetch.isEmpty else { return [] }
+
+        let predicate = eventStore.predicateForIncompleteReminders(
+            withDueDateStarting: nil,
+            ending: windowEnd,
+            calendars: calendarsToFetch
+        )
+
+        let store = eventStore
+        let reminders: [EKReminder] = await withCheckedContinuation { continuation in
+            store.fetchReminders(matching: predicate) { result in
+                continuation.resume(returning: result ?? [])
+            }
+        }
+
+        var seen = Set<String>()
+        return reminders.filter { reminder in
+            guard !reminder.isCompleted else { return false }
+            guard Self.reminder(reminder, isDueWithin: windowStart, windowEnd: windowEnd) else {
+                return false
+            }
+            return seen.insert(reminder.calendarItemIdentifier).inserted
+        }
+    }
+
+    /// 判断提醒是否落在 [windowStart, windowEnd) 窗口内。
+    /// 非递归提醒直接比较到期时间；递归提醒从基准到期日与窗口起点中较晚的
+    /// 当天开始逐日近似展开（复用单日判定 isOccurrence）。
+    /// 限制：未处理例外日期（excluded dates）等复杂规则，结果为按天近似。
+    static func reminder(
+        _ reminder: EKReminder,
+        isDueWithin windowStart: Date,
+        windowEnd: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let components = reminder.dueDateComponents,
+              let dueDate = calendar.date(from: components) else {
+            return false
+        }
+
+        guard let rules = reminder.recurrenceRules, !rules.isEmpty else {
+            return dueDate >= windowStart && dueDate < windowEnd
+        }
+
+        let dueStart = calendar.startOfDay(for: dueDate)
+        var day = calendar.startOfDay(for: max(dueDate, windowStart))
+        let lastDay = calendar.startOfDay(for: windowEnd)
+
+        while day <= lastDay {
+            if rules.contains(where: {
+                isOccurrence(of: $0, fromDate: dueStart, toDate: day, calendar: calendar)
+            }) {
+                return true
+            }
+            guard let nextDay = calendar.date(byAdding: .day, value: 1, to: day) else {
+                break
+            }
+            day = nextDay
+        }
+
+        return false
+    }
+
     func calendar(withIdentifier identifier: String) -> EKCalendar? {
         return calendars.first { $0.calendarIdentifier == identifier }
     }

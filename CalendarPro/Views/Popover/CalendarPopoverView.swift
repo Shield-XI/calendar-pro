@@ -33,6 +33,11 @@ struct CalendarPopoverView: View {
     let highlightWeekends: Bool
     let showEvents: Bool
     let emptyStateText: String
+    let showUpcomingSection: Bool
+    let upcomingItems: [CalendarItem]
+    let isLoadingUpcoming: Bool
+    let upcomingWindowDays: Int
+    let upcomingDayLimit: Int
     let selectedDate: Date?
     let items: [CalendarItem]
     let selectedEventIdentifier: String?
@@ -66,6 +71,7 @@ struct CalendarPopoverView: View {
     let onOpenReminder: (EKReminder) -> Void
     let onCreateItem: () -> Void
     let onCreateEventAt: (CalendarItemCreationTimeRange) -> Void
+    let onLoadMoreUpcoming: () -> Void
     let onOpenWeatherDetails: () -> Void
     let onOpenVacationGuide: () -> Void
     let onResetToToday: () -> Void
@@ -151,6 +157,24 @@ struct CalendarPopoverView: View {
             }
 
             eventsSection
+
+            if showUpcomingSection {
+                Divider()
+                    .padding(.horizontal, -PopoverSurfaceMetrics.outerPadding)
+
+                UpcomingEventsSection(
+                    items: upcomingItems,
+                    isLoading: isLoadingUpcoming,
+                    windowDays: upcomingWindowDays,
+                    dayLimit: upcomingDayLimit,
+                    timeRefreshCoordinator: timeRefreshCoordinator,
+                    selectedEventIdentifier: selectedEventIdentifier,
+                    onLoadMore: onLoadMoreUpcoming,
+                    onSelectEvent: onSelectEvent,
+                    onOpenReminder: onOpenReminder,
+                    onToggleReminder: onToggleReminder
+                )
+            }
 
             Divider()
                 .padding(.horizontal, -PopoverSurfaceMetrics.outerPadding)

@@ -51,6 +51,10 @@ struct RootPopoverView: View {
 
     @State private var itemsForSelectedDate: [CalendarItem] = []
     @State private var isLoadingEvents: Bool = false
+    @State private var upcomingItems: [CalendarItem] = []
+    @State private var isLoadingUpcoming: Bool = false
+    @State private var upcomingWindowDays: Int = RootPopoverView.initialUpcomingWindowDays
+    @State private var upcomingRequestID = UUID()
     @State private var almanacDescriptor: AlmanacDescriptor?
     @State private var weatherDescriptor: WeatherDescriptor?
     @State private var isLoadingWeather: Bool = false
@@ -68,29 +72,38 @@ struct RootPopoverView: View {
     private let almanacService = AlmanacService()
     private let weatherAutoRefreshInterval: TimeInterval = 15 * 60
 
+    /// 未来日程加载窗口的初始天数与每次“加载更多”的扩幅
+    static let initialUpcomingWindowDays = 30
+    static let upcomingWindowStepDays = 30
+
     var body: some View {
         popoverContent
             .onAppear {
                 timeRefreshCoordinator.refreshNow()
                 eventService.checkAuthorizationStatus()
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
+                loadUpcoming()
                 refreshInfoStrips()
             }
             .onReceive(eventService.$isAuthorized.dropFirst()) { _ in
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
+                loadUpcoming()
             }
             .onReceive(eventService.$remindersAuthorized.dropFirst()) { isAuthorized in
                 if isAuthorized {
                     eventService.fetchReminderCalendars()
                 }
                 refreshEventsForCurrentSelection()
+                loadUpcoming()
             }
             .onReceive(settingsStore.$menuBarPreferences.dropFirst()) { _ in
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
+                loadUpcoming()
                 refreshInfoStrips()
             }
             .onReceive(eventService.$storeChangeRevision.dropFirst()) { _ in
                 refreshEventsForCurrentSelection()
+                loadUpcoming()
             }
             .onReceive(viewModel.$selectedDate.dropFirst()) { newDate in
                 if let date = newDate {
@@ -99,6 +112,7 @@ struct RootPopoverView: View {
                 } else {
                     clearLoadedEvents()
                 }
+                loadUpcoming()
             }
             .onReceive(timeRefreshCoordinator.$currentDate) { currentDate in
                 guard shouldAutoRefreshWeather(at: currentDate) else { return }
@@ -107,6 +121,7 @@ struct RootPopoverView: View {
             .onReceive(timeRefreshCoordinator.$dayChangeRevision.dropFirst()) { _ in
                 viewModel.syncCurrentDaySelectionIfNeeded(calendar: displayCalendar)
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
+                loadUpcoming()
                 refreshInfoStrips()
             }
             .onDisappear {
@@ -133,6 +148,11 @@ struct RootPopoverView: View {
             highlightWeekends: settingsStore.menuBarPreferences.highlightWeekends,
             showEvents: settingsStore.menuBarPreferences.showEvents,
             emptyStateText: settingsStore.menuBarPreferences.eventListEmptyStateText,
+            showUpcomingSection: settingsStore.menuBarPreferences.showUpcomingSection,
+            upcomingItems: upcomingItems,
+            isLoadingUpcoming: isLoadingUpcoming,
+            upcomingWindowDays: upcomingWindowDays,
+            upcomingDayLimit: settingsStore.menuBarPreferences.upcomingDayLimit,
             selectedDate: viewModel.selectedDate,
             items: itemsForSelectedDate,
             selectedEventIdentifier: viewModel.selectedEventIdentifier,
@@ -190,6 +210,7 @@ struct RootPopoverView: View {
             onCreateEventAt: { timeRange in
                 handleCreateItem(initialTimeRange: timeRange)
             },
+            onLoadMoreUpcoming: handleLoadMoreUpcoming,
             onOpenWeatherDetails: handleOpenWeatherDetails,
             onOpenVacationGuide: handleOpenVacationGuide,
             onResetToToday: handleResetToToday,
@@ -462,6 +483,77 @@ struct RootPopoverView: View {
         onDismissEventDetailWindow()
     }
 
+    /// 加载未来日程窗口数据；与 loadEvents 共用授权刷新与请求竞态保护。
+    private func loadUpcoming() {
+        let preferences = settingsStore.menuBarPreferences
+
+        guard preferences.showUpcomingSection else {
+            clearLoadedUpcoming()
+            return
+        }
+
+        if eventService.isAuthorized {
+            eventService.fetchCalendars()
+        }
+
+        if eventService.remindersAuthorized {
+            eventService.fetchReminderCalendars()
+        }
+
+        // 设置的上限缩小时收敛当前窗口；上限 0 表示不限制
+        if preferences.upcomingDayLimit > 0 {
+            upcomingWindowDays = min(upcomingWindowDays, preferences.upcomingDayLimit)
+        }
+
+        let now = timeRefreshCoordinator.currentDate
+        let windowDays = upcomingWindowDays
+        guard let windowEnd = displayCalendar.date(byAdding: .day, value: windowDays, to: now) else {
+            return
+        }
+
+        isLoadingUpcoming = true
+        let requestID = UUID()
+        upcomingRequestID = requestID
+        let enabledCalendarIDs = preferences.upcomingEnabledCalendarIDs
+        let includeReminders = preferences.upcomingIncludeReminders
+        let enabledReminderCalendarIDs = preferences.upcomingEnabledReminderCalendarIDs
+
+        Task {
+            let items = await eventService.fetchUpcomingCalendarItems(
+                now: now,
+                windowEnd: windowEnd,
+                enabledCalendarIDs: enabledCalendarIDs,
+                includeReminders: includeReminders,
+                enabledReminderCalendarIDs: enabledReminderCalendarIDs
+            )
+            await MainActor.run {
+                guard upcomingRequestID == requestID else { return }
+                upcomingItems = items
+                isLoadingUpcoming = false
+            }
+        }
+    }
+
+    /// “加载更多”：窗口按固定步幅扩展，直到设置的上限（0 为无上限）。
+    private func handleLoadMoreUpcoming() {
+        let preferences = settingsStore.menuBarPreferences
+        var nextWindow = upcomingWindowDays + RootPopoverView.upcomingWindowStepDays
+
+        if preferences.upcomingDayLimit > 0 {
+            nextWindow = min(nextWindow, preferences.upcomingDayLimit)
+        }
+
+        guard nextWindow > upcomingWindowDays else { return }
+        upcomingWindowDays = nextWindow
+        loadUpcoming()
+    }
+
+    private func clearLoadedUpcoming() {
+        upcomingRequestID = UUID()
+        upcomingItems = []
+        isLoadingUpcoming = false
+    }
+
     private func syncSelectedEvent(with items: [CalendarItem]) {
         guard let selectedIdentifier = viewModel.selectedEventIdentifier else { return }
         let found = items.contains { item in
@@ -498,6 +590,7 @@ struct RootPopoverView: View {
         do {
             try eventService.toggleReminderCompletion(reminder)
             refreshEventsForCurrentSelection()
+            loadUpcoming()
         } catch {
             print("Failed to toggle reminder completion: \(error)")
         }

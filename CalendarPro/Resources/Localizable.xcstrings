@@ -7,6 +7,23 @@
     "·" : {
 
     },
+    "%d days" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d days"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 天"
+          }
+        }
+      }
+    },
     "%d days before" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -884,6 +901,23 @@
         }
       }
     },
+    "Choose Calendars for Upcoming" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Calendars for Upcoming"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择未来日程包含的日历"
+          }
+        }
+      }
+    },
     "Choose Reminder Lists" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -897,6 +931,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择提醒事项列表"
+          }
+        }
+      }
+    },
+    "Choose Reminder Lists for Upcoming" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Reminder Lists for Upcoming"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择未来日程包含的提醒列表"
           }
         }
       }
@@ -2366,6 +2417,23 @@
         }
       }
     },
+    "Include Reminders in Upcoming" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Include Reminders in Upcoming"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含有到期时间的提醒事项"
+          }
+        }
+      }
+    },
     "Include Time" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2804,6 +2872,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "所属列表"
+          }
+        }
+      }
+    },
+    "Load More" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Load More"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加载更多"
           }
         }
       }
@@ -3352,6 +3437,23 @@
         }
       }
     },
+    "No Limit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Limit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不限"
+          }
+        }
+      }
+    },
     "No Calendars Available" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3518,6 +3620,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未配置远程节假日数据源，当前使用内置数据"
+          }
+        }
+      }
+    },
+    "No Upcoming Events" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No upcoming events"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未来暂无日程"
           }
         }
       }
@@ -5018,6 +5137,40 @@
         }
       }
     },
+    "Show Upcoming Section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Upcoming Section"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示未来日程版块"
+          }
+        }
+      }
+    },
+    "Show Upcoming Section Description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show a collapsible section below the event list that lists upcoming events."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在日程列表下方显示可折叠的未来日程版块。"
+          }
+        }
+      }
+    },
     "Show Upcoming Indicator" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5813,6 +5966,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "即将到来"
+          }
+        }
+      }
+    },
+    "Upcoming Day Limit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upcoming Day Limit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时间范围"
+          }
+        }
+      }
+    },
+    "Upcoming Events" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upcoming"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未来日程"
+          }
+        }
+      }
+    },
+    "Upcoming Today" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天"
+          }
+        }
+      }
+    },
+    "Upcoming Tomorrow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tomorrow"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明天"
           }
         }
       }
