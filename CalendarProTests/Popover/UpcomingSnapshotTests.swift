@@ -3,7 +3,8 @@ import EventKit
 @testable import CalendarPro
 
 // 文件头：
-// 职责：验证 UpcomingSnapshot 的按天分组纯函数，以及 EventService 事件/提醒
+// 职责：验证 UpcomingSnapshot 的按天分组纯函数（含双向窗口下的过去天组、
+//       「昨天」天头与多天事件单次分组），以及 EventService 事件/提醒
 //       近期窗口过滤（含递归展开近似）的行为。
 // 输入：GMT 固定日历 + DateComponents 构造的固定日期与 EventKit 夹具。
 // 输出：XCTest 断言结果。
@@ -116,6 +117,82 @@ final class UpcomingSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.totalItemCount, 0)
     }
 
+    // MARK: - 双向窗口分组（过去天组）
+
+    func testPastEventsFormAscendingDayGroupsWithFutureGroups() {
+        // 过去事件纳入分组，过去天组与未来天组共存且整体按天升序
+        let now = makeDate(2026, 10, 16, 10, 0)
+        let threeDaysAgo = makeEvent(
+            start: makeDate(2026, 10, 13, 9, 0),
+            end: makeDate(2026, 10, 13, 10, 0)
+        )
+        let yesterday = makeEvent(
+            start: makeDate(2026, 10, 15, 9, 0),
+            end: makeDate(2026, 10, 15, 10, 0)
+        )
+        let tomorrow = makeEvent(
+            start: makeDate(2026, 10, 17, 9, 0),
+            end: makeDate(2026, 10, 17, 10, 0)
+        )
+
+        let snapshot = UpcomingSnapshot.make(
+            items: [tomorrow, threeDaysAgo, yesterday],
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(snapshot.dayGroups.count, 3)
+        XCTAssertEqual(snapshot.totalItemCount, 3)
+        XCTAssertEqual(
+            snapshot.dayGroups.map(\.dayStart),
+            [
+                calendar.startOfDay(for: makeDate(2026, 10, 13, 0, 0)),
+                calendar.startOfDay(for: makeDate(2026, 10, 15, 0, 0)),
+                calendar.startOfDay(for: makeDate(2026, 10, 17, 0, 0))
+            ]
+        )
+    }
+
+    func testYesterdayGroupUsesYesterdayHeaderText() throws {
+        let now = makeDate(2026, 10, 16, 10, 0)
+        let yesterday = makeEvent(
+            start: makeDate(2026, 10, 15, 9, 0),
+            end: makeDate(2026, 10, 15, 10, 0)
+        )
+
+        let snapshot = UpcomingSnapshot.make(
+            items: [yesterday],
+            now: now,
+            calendar: calendar
+        )
+
+        let group = try XCTUnwrap(snapshot.dayGroups.first)
+        XCTAssertEqual(group.headerText, L("Recent Yesterday"))
+    }
+
+    func testMultiDayEventAppearsOnceInItsStartDayGroup() {
+        // 多天事件只按开始日分组一次，不跨天重复展示
+        let now = makeDate(2026, 10, 16, 10, 0)
+        let multiDayEvent = makeEvent(
+            start: makeDate(2026, 10, 12, 20, 0),
+            end: makeDate(2026, 10, 14, 22, 0)
+        )
+
+        let snapshot = UpcomingSnapshot.make(
+            items: [multiDayEvent],
+            now: now,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(snapshot.dayGroups.count, 1)
+        XCTAssertEqual(
+            snapshot.dayGroups.first?.dayStart,
+            calendar.startOfDay(for: makeDate(2026, 10, 12, 0, 0))
+        )
+        XCTAssertEqual(snapshot.dayGroups.first?.items.count, 1)
+        XCTAssertEqual(snapshot.totalItemCount, 1)
+    }
+
     // MARK: - EventService.reminder(isDueWithin:) 近期窗口过滤
 
     @MainActor
@@ -189,9 +266,9 @@ final class UpcomingSnapshotTests: XCTestCase {
     // MARK: - EventService.event(isWithinUpcomingWindow:) 近期窗口过滤
 
     @MainActor
-    func testEventWindowFilterExcludesMultiDayEventStartedYesterdayEndingToday() {
-        // 昨天开始、今天未结束：重叠语义谓词会查出，但开始早于窗口起点应排除，
-        // 否则会按其 startDate 在列表产生过去天组
+    func testEventWindowFilterExcludesMultiDayEventStartedBeforeWindowStart() {
+        // 昨天开始、今天未结束：重叠语义谓词会查出，但开始早于窗口起点应
+        // 排除，多天事件只在其开始日所在的窗口内展示一次
         let event = makeEKEvent(
             start: makeDate(2026, 10, 15, 20, 0),
             end: makeDate(2026, 10, 16, 12, 0)
@@ -200,7 +277,6 @@ final class UpcomingSnapshotTests: XCTestCase {
         let isIncluded = EventService.event(
             event,
             isWithinUpcomingWindow: calendar.startOfDay(for: makeDate(2026, 10, 16, 0, 0)),
-            now: makeDate(2026, 10, 16, 10, 0),
             enabledCalendarIDs: []
         )
 
@@ -208,7 +284,7 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     @MainActor
-    func testEventWindowFilterExcludesMultiDayEventStartedYesterdayEndingTomorrow() {
+    func testEventWindowFilterExcludesMultiDayEventSpanningWindowStart() {
         let event = makeEKEvent(
             start: makeDate(2026, 10, 15, 20, 0),
             end: makeDate(2026, 10, 17, 12, 0)
@@ -217,7 +293,6 @@ final class UpcomingSnapshotTests: XCTestCase {
         let isIncluded = EventService.event(
             event,
             isWithinUpcomingWindow: calendar.startOfDay(for: makeDate(2026, 10, 16, 0, 0)),
-            now: makeDate(2026, 10, 16, 10, 0),
             enabledCalendarIDs: []
         )
 
@@ -225,8 +300,8 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     @MainActor
-    func testEventWindowFilterIncludesOngoingEventStartedToday() {
-        // 今天零点后开始、仍在进行中的事件应保留（正向对照）
+    func testEventWindowFilterIncludesEventStartedTodayAfterWindowStart() {
+        // 今天零点后开始的事件应保留；双向窗口下已结束的当天事件同样纳入
         let event = makeEKEvent(
             start: makeDate(2026, 10, 16, 8, 0),
             end: makeDate(2026, 10, 16, 12, 0)
@@ -235,7 +310,23 @@ final class UpcomingSnapshotTests: XCTestCase {
         let isIncluded = EventService.event(
             event,
             isWithinUpcomingWindow: calendar.startOfDay(for: makeDate(2026, 10, 16, 0, 0)),
-            now: makeDate(2026, 10, 16, 10, 0),
+            enabledCalendarIDs: []
+        )
+
+        XCTAssertTrue(isIncluded)
+    }
+
+    @MainActor
+    func testEventWindowFilterIncludesPastEventWithinExtendedWindow() {
+        // 窗口向过去扩展后，窗口内已结束的事件应纳入（上滚查看过去日程）
+        let event = makeEKEvent(
+            start: makeDate(2026, 10, 12, 9, 0),
+            end: makeDate(2026, 10, 12, 10, 0)
+        )
+
+        let isIncluded = EventService.event(
+            event,
+            isWithinUpcomingWindow: calendar.startOfDay(for: makeDate(2026, 10, 10, 0, 0)),
             enabledCalendarIDs: []
         )
 

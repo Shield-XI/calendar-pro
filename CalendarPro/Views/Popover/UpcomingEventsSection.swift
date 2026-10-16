@@ -4,7 +4,7 @@ import EventKit
 // 文件头：
 // 职责：弹层“近期日程”可折叠分节。UpcomingSnapshot 负责把统一的 CalendarItem
 //       列表按天分组（纯函数，便于测试）；UpcomingEventsSection 负责折叠标题、
-//       天头与条目渲染及滚动到底自动加载。
+//       天头与条目渲染及双向窗口两端滚动到边自动加载。
 // 输入：EventService.fetchUpcomingCalendarItems 取回的近期窗口内 [CalendarItem]、
 //       当前时间（TimeRefreshCoordinator）与分组用日历。
 // 输出：按天升序分组的快照结构 / 弹层内的分节视图。
@@ -75,7 +75,7 @@ struct UpcomingSnapshot {
         )
     }
 
-    /// 天头文案：今天 / 明天，其余按本地化“M月d日”模板格式化。
+    /// 天头文案：今天 / 昨天 / 明天，其余按本地化“M月d日”模板格式化。
     private static func dayHeaderText(
         for dayStart: Date,
         now: Date,
@@ -83,6 +83,14 @@ struct UpcomingSnapshot {
     ) -> String {
         if calendar.isDate(dayStart, inSameDayAs: now) {
             return L("Recent Today")
+        }
+
+        if let yesterday = calendar.date(
+            byAdding: .day,
+            value: -1,
+            to: calendar.startOfDay(for: now)
+        ), calendar.isDate(dayStart, inSameDayAs: yesterday) {
+            return L("Recent Yesterday")
         }
 
         if let tomorrow = calendar.date(
@@ -112,13 +120,16 @@ struct UpcomingEventsSection: View {
     }
 
     let items: [CalendarItem]
-    let isLoading: Bool
+    let isLoadingPast: Bool
+    let isLoadingFuture: Bool
     let windowDays: Int
     let dayLimit: Int
+    let hasMorePast: Bool
     let defaultExpanded: Bool
     let timeRefreshCoordinator: TimeRefreshCoordinator
     let selectedEventIdentifier: String?
-    let onLoadMore: () -> Void
+    let onLoadMorePast: () -> Void
+    let onLoadMoreFuture: () -> Void
     let onSelectEvent: (EKEvent) -> Void
     let onOpenReminder: (EKReminder) -> Void
     let onToggleReminder: (EKReminder) -> Void
@@ -127,27 +138,38 @@ struct UpcomingEventsSection: View {
     // 打开重新按设置取初值；会话内手动折叠即时生效，不持久化
     @State private var isExpanded: Bool
 
+    /// 显式初始化器：入参由 CalendarPopoverView 透传（数据与回调来自
+    /// RootPopoverView 与用户设置），defaultExpanded 来自「默认展开版块」
+    /// 设置，作为折叠态的初始值。
+    /// 副作用：以 defaultExpanded 初始化 @State isExpanded，弹层视图重建时
+    /// 重新取设置初值。
     init(
         items: [CalendarItem],
-        isLoading: Bool,
+        isLoadingPast: Bool,
+        isLoadingFuture: Bool,
         windowDays: Int,
         dayLimit: Int,
+        hasMorePast: Bool,
         defaultExpanded: Bool,
         timeRefreshCoordinator: TimeRefreshCoordinator,
         selectedEventIdentifier: String?,
-        onLoadMore: @escaping () -> Void,
+        onLoadMorePast: @escaping () -> Void,
+        onLoadMoreFuture: @escaping () -> Void,
         onSelectEvent: @escaping (EKEvent) -> Void,
         onOpenReminder: @escaping (EKReminder) -> Void,
         onToggleReminder: @escaping (EKReminder) -> Void
     ) {
         self.items = items
-        self.isLoading = isLoading
+        self.isLoadingPast = isLoadingPast
+        self.isLoadingFuture = isLoadingFuture
         self.windowDays = windowDays
         self.dayLimit = dayLimit
+        self.hasMorePast = hasMorePast
         self.defaultExpanded = defaultExpanded
         self.timeRefreshCoordinator = timeRefreshCoordinator
         self.selectedEventIdentifier = selectedEventIdentifier
-        self.onLoadMore = onLoadMore
+        self.onLoadMorePast = onLoadMorePast
+        self.onLoadMoreFuture = onLoadMoreFuture
         self.onSelectEvent = onSelectEvent
         self.onOpenReminder = onOpenReminder
         self.onToggleReminder = onToggleReminder
@@ -204,25 +226,26 @@ struct UpcomingEventsSection: View {
         .accessibilityIdentifier("calendar-popover-upcoming-toggle")
     }
 
-    /// 标题右侧计数文案：加载中显示 Loading，否则显示条目总数。
+    /// 标题右侧计数文案：任一端加载中显示 Loading，否则显示条目总数。
     /// - Parameter snapshot: body 内单次求值的分组快照
     private func countText(for snapshot: UpcomingSnapshot) -> String {
-        if isLoading {
+        if isLoadingPast || isLoadingFuture {
             return L("Loading")
         }
         return LF("%d items", snapshot.totalItemCount)
     }
 
-    private var hasMore: Bool {
-        // dayLimit 为 0 表示不限制窗口大小，始终可以继续加载
+    /// 未来端是否还能继续扩窗：dayLimit 为 0 表示不限制窗口大小。
+    private var hasMoreFuture: Bool {
         dayLimit == 0 || windowDays < dayLimit
     }
 
-    /// 展开态内容：空态文案或按天分组的滚动列表（滚动到底自动加载下一窗口）。
+    /// 展开态内容：空态文案或按天分组的滚动列表（双向窗口，滚动到端点
+    /// 自动向过去/未来扩窗）。
     /// - Parameter snapshot: body 内单次求值的分组快照
     @ViewBuilder
     private func expandedContent(_ snapshot: UpcomingSnapshot) -> some View {
-        if items.isEmpty, !isLoading {
+        if items.isEmpty, !(isLoadingPast || isLoadingFuture) {
             Text(L("No Recent Events"))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -231,23 +254,23 @@ struct UpcomingEventsSection: View {
         } else {
             ScrollView(.vertical) {
                 // 用 LazyVStack 而非 VStack：普通 VStack 会一次性物化全部子
-                // 视图，末尾哨兵的 onAppear 在展开瞬间就会立即触发；LazyVStack
-                // 只在子视图滚动到可视区域附近才渲染，哨兵出现即代表“已到底”
+                // 视图，端点哨兵的 onAppear 在展开瞬间就会立即触发；LazyVStack
+                // 只在子视图滚动到可视区域附近才渲染，哨兵出现即代表“已到端”
                 LazyVStack(alignment: .leading, spacing: 10) {
+                    if isLoadingPast {
+                        progressRow
+                    } else if hasMorePast {
+                        loadPastTrigger
+                    }
+
                     ForEach(snapshot.dayGroups) { group in
                         dayGroupView(group)
                     }
 
-                    if isLoading {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .scaleEffect(0.7)
-                            Spacer()
-                        }
-                        .padding(.vertical, 4)
-                    } else if hasMore {
-                        loadMoreTrigger
+                    if isLoadingFuture {
+                        progressRow
+                    } else if hasMoreFuture {
+                        loadFutureTrigger
                     }
                 }
                 .padding(.vertical, 1)
@@ -255,16 +278,42 @@ struct UpcomingEventsSection: View {
         }
     }
 
-    /// 滚动到底的加载哨兵：渲染出现即触发扩窗回调。
-    /// 加载中上方分支换成进度指示、窗口达上限时 hasMore 为 false，两种情况
-    /// 哨兵都不在视图层级内，不会重复触发；一次加载结束后哨兵重新插入并再次
-    /// 触发 onAppear，内容不足一屏时也能连续加载直到占满视口或达上限。
-    private var loadMoreTrigger: some View {
+    /// 端点加载中的进度行：与哨兵互斥渲染，加载期间哨兵不在视图层级内，
+    /// 不会重复触发。
+    private var progressRow: some View {
+        HStack {
+            Spacer()
+            ProgressView()
+                .scaleEffect(0.7)
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// 滚动到顶的加载哨兵：渲染出现即触发向过去扩窗回调。
+    /// 列表首元素在展开时通常可见，属预期行为——打开即自动向过去补一个
+    /// 窗口（30 天），内容不足一屏时连续加载；到达历史起点后 hasMorePast
+    /// 为 false，哨兵离开视图层级不再触发。
+    private var loadPastTrigger: some View {
         Color.clear
             .frame(height: 1)
             .onAppear {
-                guard !isLoading, hasMore else { return }
-                onLoadMore()
+                guard !isLoadingPast, hasMorePast else { return }
+                onLoadMorePast()
+            }
+    }
+
+    /// 滚动到底的加载哨兵：渲染出现即触发向未来扩窗回调。
+    /// 加载中上方分支换成进度指示、窗口达上限时 hasMoreFuture 为 false，
+    /// 两种情况哨兵都不在视图层级内，不会重复触发；一次加载结束后哨兵
+    /// 重新插入并再次触发 onAppear，内容不足一屏时也能连续加载直到占满
+    /// 视口或达上限。
+    private var loadFutureTrigger: some View {
+        Color.clear
+            .frame(height: 1)
+            .onAppear {
+                guard !isLoadingFuture, hasMoreFuture else { return }
+                onLoadMoreFuture()
             }
     }
 

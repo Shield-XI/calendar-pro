@@ -52,8 +52,16 @@ struct RootPopoverView: View {
     @State private var itemsForSelectedDate: [CalendarItem] = []
     @State private var isLoadingEvents: Bool = false
     @State private var upcomingItems: [CalendarItem] = []
-    @State private var isLoadingUpcoming: Bool = false
-    @State private var upcomingWindowDays: Int = RootPopoverView.initialUpcomingWindowDays
+    @State private var isLoadingUpcomingPast: Bool = false
+    @State private var isLoadingUpcomingFuture: Bool = false
+    // 双向窗口端点：过去端点=今天零点向上游回溯 upcomingPastDays 天；
+    // 未来端点=now 向下游扩展 upcomingFutureDays 天。@State 随弹层视图实例
+    // 存活，用户已扩展的端点在弹层重开时保留，只重取数据不重置窗口
+    @State private var upcomingPastDays: Int = 0
+    @State private var upcomingFutureDays: Int = RootPopoverView.initialUpcomingWindowDays
+    // 过去端达界标记：向过去扩窗带不回任何条目时置位，隐藏顶部哨兵；
+    // 数据源或跨天变化可能带来更早的历史，相关触发点会复位该标记
+    @State private var isUpcomingPastExhausted: Bool = false
     @State private var upcomingRequestID = UUID()
     @State private var almanacDescriptor: AlmanacDescriptor?
     @State private var weatherDescriptor: WeatherDescriptor?
@@ -72,7 +80,9 @@ struct RootPopoverView: View {
     private let almanacService = AlmanacService()
     private let weatherAutoRefreshInterval: TimeInterval = 15 * 60
 
-    /// 近期日程加载窗口的初始天数与每次滚动到端点自动加载的扩幅
+    /// 近期日程双向窗口的初始天数与每次滚动到端点自动加载的扩幅：
+    /// 初始窗口为 [今天零点, now + 30 天]；上滚向过去扩 30 天（无天数硬
+    /// 上限，探明历史起点即止），下滚向未来扩 30 天（受设置上限约束）
     static let initialUpcomingWindowDays = 30
     static let upcomingWindowStepDays = 30
 
@@ -87,6 +97,7 @@ struct RootPopoverView: View {
             }
             .onReceive(eventService.$isAuthorized.dropFirst()) { _ in
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
+                isUpcomingPastExhausted = false
                 loadUpcoming()
             }
             .onReceive(eventService.$remindersAuthorized.dropFirst()) { isAuthorized in
@@ -94,15 +105,18 @@ struct RootPopoverView: View {
                     eventService.fetchReminderCalendars()
                 }
                 refreshEventsForCurrentSelection()
+                isUpcomingPastExhausted = false
                 loadUpcoming()
             }
             .onReceive(settingsStore.$menuBarPreferences.dropFirst()) { _ in
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
+                isUpcomingPastExhausted = false
                 loadUpcoming()
                 refreshInfoStrips()
             }
             .onReceive(eventService.$storeChangeRevision.dropFirst()) { _ in
                 refreshEventsForCurrentSelection()
+                isUpcomingPastExhausted = false
                 loadUpcoming()
             }
             .onReceive(viewModel.$selectedDate.dropFirst()) { newDate in
@@ -121,6 +135,8 @@ struct RootPopoverView: View {
             .onReceive(timeRefreshCoordinator.$dayChangeRevision.dropFirst()) { _ in
                 viewModel.syncCurrentDaySelectionIfNeeded(calendar: displayCalendar)
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
+                // 跨天后窗口基准（今天零点）前移，重置过去端达界标记
+                isUpcomingPastExhausted = false
                 loadUpcoming()
                 refreshInfoStrips()
             }
@@ -150,9 +166,11 @@ struct RootPopoverView: View {
             emptyStateText: settingsStore.menuBarPreferences.eventListEmptyStateText,
             showUpcomingSection: settingsStore.menuBarPreferences.showUpcomingSection,
             upcomingItems: upcomingItems,
-            isLoadingUpcoming: isLoadingUpcoming,
-            upcomingWindowDays: upcomingWindowDays,
+            isLoadingUpcomingPast: isLoadingUpcomingPast,
+            isLoadingUpcomingFuture: isLoadingUpcomingFuture,
+            upcomingWindowDays: upcomingFutureDays,
             upcomingDayLimit: settingsStore.menuBarPreferences.upcomingDayLimit,
+            hasMoreUpcomingPast: !isUpcomingPastExhausted,
             upcomingDefaultExpanded: settingsStore.menuBarPreferences.upcomingDefaultExpanded,
             selectedDate: viewModel.selectedDate,
             items: itemsForSelectedDate,
@@ -211,7 +229,8 @@ struct RootPopoverView: View {
             onCreateEventAt: { timeRange in
                 handleCreateItem(initialTimeRange: timeRange)
             },
-            onLoadMoreUpcoming: handleLoadMoreUpcoming,
+            onLoadMoreUpcomingPast: handleLoadMoreUpcomingPast,
+            onLoadMoreUpcomingFuture: handleLoadMoreUpcomingFuture,
             onOpenWeatherDetails: handleOpenWeatherDetails,
             onOpenVacationGuide: handleOpenVacationGuide,
             onResetToToday: handleResetToToday,
@@ -485,7 +504,11 @@ struct RootPopoverView: View {
     }
 
     /// 加载近期日程窗口数据；与 loadEvents 共用授权刷新与请求竞态保护。
-    private func loadUpcoming() {
+    /// - Parameter pastExtensionBoundary: 本次加载由「向过去扩窗」触发时传
+    ///   扩窗前的窗口起点；结果在该边界之前没有任何条目时视为已探明历史
+    ///   起点，停止继续向过去扩窗。其余触发的重取传 nil（保留既有达界
+    ///   标记，避免弹层重开就重新向过去全量扩窗）。
+    private func loadUpcoming(pastExtensionBoundary: Date? = nil) {
         let preferences = settingsStore.menuBarPreferences
 
         guard preferences.showUpcomingSection else {
@@ -501,18 +524,25 @@ struct RootPopoverView: View {
             eventService.fetchReminderCalendars()
         }
 
-        // 设置的上限缩小时收敛当前窗口；上限 0 表示不限制
+        // 设置的上限缩小时收敛未来端点；上限 0 表示不限制
         if preferences.upcomingDayLimit > 0 {
-            upcomingWindowDays = min(upcomingWindowDays, preferences.upcomingDayLimit)
+            upcomingFutureDays = min(upcomingFutureDays, preferences.upcomingDayLimit)
         }
 
         let now = timeRefreshCoordinator.currentDate
-        let windowDays = upcomingWindowDays
-        guard let windowEnd = displayCalendar.date(byAdding: .day, value: windowDays, to: now) else {
+        guard let pastStart = upcomingPastStart(from: now),
+              let futureEnd = displayCalendar.date(
+                  byAdding: .day,
+                  value: upcomingFutureDays,
+                  to: now
+              ) else {
             return
         }
 
-        isLoadingUpcoming = true
+        // 每次全量重查当前窗口，两端加载标记一起置位；加载期间两端哨兵
+        // 均被进度行替换，天然串行化，无并发扩窗竞态
+        isLoadingUpcomingPast = true
+        isLoadingUpcomingFuture = true
         let requestID = UUID()
         upcomingRequestID = requestID
         let enabledCalendarIDs = preferences.upcomingEnabledCalendarIDs
@@ -521,8 +551,8 @@ struct RootPopoverView: View {
 
         Task {
             let items = await eventService.fetchUpcomingCalendarItems(
-                now: now,
-                windowEnd: windowEnd,
+                pastStart: pastStart,
+                futureEnd: futureEnd,
                 enabledCalendarIDs: enabledCalendarIDs,
                 includeReminders: includeReminders,
                 enabledReminderCalendarIDs: enabledReminderCalendarIDs
@@ -530,33 +560,63 @@ struct RootPopoverView: View {
             await MainActor.run {
                 guard upcomingRequestID == requestID else { return }
                 upcomingItems = items
-                isLoadingUpcoming = false
+                if let pastExtensionBoundary {
+                    // 新扩的过去窗带不回任何条目，视为已到历史起点，隐藏顶部哨兵
+                    let hasNewPastItems = items.contains {
+                        ($0.startDate ?? .distantFuture) < pastExtensionBoundary
+                    }
+                    isUpcomingPastExhausted = !hasNewPastItems
+                }
+                isLoadingUpcomingPast = false
+                isLoadingUpcomingFuture = false
             }
         }
     }
 
-    /// 滚动到底自动加载：窗口按固定步幅扩展，直到设置的上限（0 为无上限）。
+    /// 当前窗口的过去端点：今天零点起向上游回溯 upcomingPastDays 天。
+    private func upcomingPastStart(from now: Date) -> Date? {
+        displayCalendar.date(
+            byAdding: .day,
+            value: -upcomingPastDays,
+            to: displayCalendar.startOfDay(for: now)
+        )
+    }
+
+    /// 滚动到顶自动加载：窗口起点按固定步幅向过去扩展，不设天数硬上限，
+    /// 探明历史起点（isUpcomingPastExhausted）后停止继续扩展；加载进行中
+    /// 直接忽略触发，过期结果另有 upcomingRequestID 竞态守卫兜底丢弃。
+    private func handleLoadMoreUpcomingPast() {
+        guard !isLoadingUpcomingPast, !isUpcomingPastExhausted else { return }
+        guard let boundary = upcomingPastStart(from: timeRefreshCoordinator.currentDate) else {
+            return
+        }
+        upcomingPastDays += RootPopoverView.upcomingWindowStepDays
+        loadUpcoming(pastExtensionBoundary: boundary)
+    }
+
+    /// 滚动到底自动加载：窗口终点按固定步幅扩展，直到设置的上限（0 为无上限）。
     /// 加载进行中直接忽略触发，从源头挡掉 in-flight 期间的重复调用；
     /// 过期结果另有 upcomingRequestID 竞态守卫兜底丢弃。
-    private func handleLoadMoreUpcoming() {
-        guard !isLoadingUpcoming else { return }
+    private func handleLoadMoreUpcomingFuture() {
+        guard !isLoadingUpcomingFuture else { return }
 
         let preferences = settingsStore.menuBarPreferences
-        var nextWindow = upcomingWindowDays + RootPopoverView.upcomingWindowStepDays
+        var nextWindow = upcomingFutureDays + RootPopoverView.upcomingWindowStepDays
 
         if preferences.upcomingDayLimit > 0 {
             nextWindow = min(nextWindow, preferences.upcomingDayLimit)
         }
 
-        guard nextWindow > upcomingWindowDays else { return }
-        upcomingWindowDays = nextWindow
+        guard nextWindow > upcomingFutureDays else { return }
+        upcomingFutureDays = nextWindow
         loadUpcoming()
     }
 
     private func clearLoadedUpcoming() {
         upcomingRequestID = UUID()
         upcomingItems = []
-        isLoadingUpcoming = false
+        isLoadingUpcomingPast = false
+        isLoadingUpcomingFuture = false
     }
 
     private func syncSelectedEvent(with items: [CalendarItem]) {

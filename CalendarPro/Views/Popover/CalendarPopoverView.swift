@@ -35,9 +35,11 @@ struct CalendarPopoverView: View {
     let emptyStateText: String
     let showUpcomingSection: Bool
     let upcomingItems: [CalendarItem]
-    let isLoadingUpcoming: Bool
+    let isLoadingUpcomingPast: Bool
+    let isLoadingUpcomingFuture: Bool
     let upcomingWindowDays: Int
     let upcomingDayLimit: Int
+    let hasMoreUpcomingPast: Bool
     let upcomingDefaultExpanded: Bool
     let selectedDate: Date?
     let items: [CalendarItem]
@@ -72,7 +74,8 @@ struct CalendarPopoverView: View {
     let onOpenReminder: (EKReminder) -> Void
     let onCreateItem: () -> Void
     let onCreateEventAt: (CalendarItemCreationTimeRange) -> Void
-    let onLoadMoreUpcoming: () -> Void
+    let onLoadMoreUpcomingPast: () -> Void
+    let onLoadMoreUpcomingFuture: () -> Void
     let onOpenWeatherDetails: () -> Void
     let onOpenVacationGuide: () -> Void
     let onResetToToday: () -> Void
@@ -165,13 +168,16 @@ struct CalendarPopoverView: View {
 
                 UpcomingEventsSection(
                     items: upcomingItems,
-                    isLoading: isLoadingUpcoming,
+                    isLoadingPast: isLoadingUpcomingPast,
+                    isLoadingFuture: isLoadingUpcomingFuture,
                     windowDays: upcomingWindowDays,
                     dayLimit: upcomingDayLimit,
+                    hasMorePast: hasMoreUpcomingPast,
                     defaultExpanded: upcomingDefaultExpanded,
                     timeRefreshCoordinator: timeRefreshCoordinator,
                     selectedEventIdentifier: selectedEventIdentifier,
-                    onLoadMore: onLoadMoreUpcoming,
+                    onLoadMorePast: onLoadMoreUpcomingPast,
+                    onLoadMoreFuture: onLoadMoreUpcomingFuture,
                     onSelectEvent: onSelectEvent,
                     onOpenReminder: onOpenReminder,
                     onToggleReminder: onToggleReminder

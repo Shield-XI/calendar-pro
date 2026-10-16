@@ -304,41 +304,38 @@ final class EventService: ObservableObject {
         }
     }
     
-    /// 获取近期日程窗口（事件 + 可选的有到期时间的未完成提醒）。
+    /// 获取 [pastStart, futureEnd] 窗口内的近期日程（事件 + 可选的有到期时间的未完成提醒）。
     /// - Parameters:
-    ///   - now: 窗口起点，取当前时间；当天已结束的事件会被过滤
-    ///   - windowEnd: 窗口终点（now + N 天）
+    ///   - pastStart: 窗口起点（过去端点，初始为今天零点，用户上滚后向前扩展）
+    ///   - futureEnd: 窗口终点（未来端点，now + N 天）
     ///   - enabledCalendarIDs: 参与聚合的日历 ID，空数组表示全部日历
     ///   - includeReminders: 是否纳入有到期时间的未完成提醒
     ///   - enabledReminderCalendarIDs: 参与聚合的提醒列表 ID，空数组表示全部
     /// - Returns: 按开始时间升序的统一条目
     /// - Note: EventKit 窗口谓词为重叠语义，会返回开始早于窗口的事件；再按
-    ///   startDate >= 当天零点且 endDate > now 过滤，保证当天进行中与全天事件
-    ///   保留、开始于今天之前的多天事件不纳入（否则会在列表产生过去天组）。
-    ///   递归提醒按“天”近似展开（见 reminder(_:isDueWithin:windowEnd:calendar:)
-    ///   的限制说明）。
+    ///   startDate >= pastStart 过滤，开始早于过去端点的多天事件不纳入
+    ///   （多天事件只在其开始日所在的窗口内展示一次）。窗口内已结束的事件
+    ///   同样纳入，供上滚回看过去日程。递归提醒按“天”近似展开（见
+    ///   reminder(_:isDueWithin:windowEnd:calendar:) 的限制说明）。
     func fetchUpcomingCalendarItems(
-        now: Date,
-        windowEnd: Date,
+        pastStart: Date,
+        futureEnd: Date,
         enabledCalendarIDs: [String],
         includeReminders: Bool,
         enabledReminderCalendarIDs: [String]
     ) async -> [CalendarItem] {
         var items: [CalendarItem] = []
-        let calendar = Calendar.current
-        let windowStart = calendar.startOfDay(for: now)
 
         if isAuthorized {
             let predicate = eventStore.predicateForEvents(
-                withStart: windowStart,
-                end: windowEnd,
+                withStart: pastStart,
+                end: futureEnd,
                 calendars: nil
             )
             let events = eventStore.events(matching: predicate).filter {
                 Self.event(
                     $0,
-                    isWithinUpcomingWindow: windowStart,
-                    now: now,
+                    isWithinUpcomingWindow: pastStart,
                     enabledCalendarIDs: enabledCalendarIDs
                 )
             }
@@ -347,8 +344,8 @@ final class EventService: ObservableObject {
 
         if includeReminders {
             let reminders = await fetchUpcomingReminders(
-                from: windowStart,
-                through: windowEnd,
+                from: pastStart,
+                through: futureEnd,
                 enabledCalendarIDs: enabledReminderCalendarIDs
             )
             items.append(contentsOf: reminders.map { .reminder($0) })
@@ -406,19 +403,21 @@ final class EventService: ObservableObject {
     /// 判断事件是否纳入近期日程列表（静态纯函数，供窗口过滤与单元测试复用）。
     /// - Parameters:
     ///   - event: 待判定事件，来自 EventKit 重叠语义窗口谓词的查询结果
-    ///   - windowStart: 窗口起点（当天零点）；事件 startDate 不早于它才纳入，
-    ///     避免开始于今天之前的多天事件在列表里产生过去天组
-    ///   - now: 当前时间；事件 endDate 晚于它（进行中或未开始）才纳入
+    ///   - windowStart: 窗口起点（过去端点）；事件 startDate 与 endDate 均不早于
+    ///     它才纳入——开始早于过去端点的多天事件整体不纳入（只在其开始日
+    ///     所在的窗口内展示一次），窗口起点前已结束的异常时长数据一并挡掉
     ///   - enabledCalendarIDs: 参与聚合的日历 ID，空数组表示全部日历
     /// - Returns: 纳入返回 true，否则 false；事件未挂载日历（如测试夹具）时
     ///   无法匹配指定日历，仅在“全部日历”语义下纳入
+    /// - Note: 双向窗口语义——窗口内已结束的事件同样纳入（供上滚回看过去
+    ///   日程），不再按 endDate > 当前时间过滤；进行中/全天事件的保留语义
+    ///   不变。
     static func event(
         _ event: EKEvent,
         isWithinUpcomingWindow windowStart: Date,
-        now: Date,
         enabledCalendarIDs: [String]
     ) -> Bool {
-        guard event.endDate > now, event.startDate >= windowStart else {
+        guard event.startDate >= windowStart, event.endDate > windowStart else {
             return false
         }
         guard let calendarID = event.calendar?.calendarIdentifier else {
