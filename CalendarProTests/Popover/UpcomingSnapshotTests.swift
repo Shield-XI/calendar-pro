@@ -3,8 +3,8 @@ import EventKit
 @testable import CalendarPro
 
 // 文件头：
-// 职责：验证 UpcomingSnapshot 的按天分组纯函数，以及 EventService 提醒窗口
-//       过滤（含递归展开近似）的行为。
+// 职责：验证 UpcomingSnapshot 的按天分组纯函数，以及 EventService 事件/提醒
+//       窗口过滤（含递归展开近似）的行为。
 // 输入：GMT 固定日历 + DateComponents 构造的固定日期与 EventKit 夹具。
 // 输出：XCTest 断言结果。
 // 依赖：XCTest、EventKit、@testable CalendarPro。
@@ -186,6 +186,62 @@ final class UpcomingSnapshotTests: XCTestCase {
         XCTAssertFalse(isDue)
     }
 
+    // MARK: - EventService.event(isWithinUpcomingWindow:) 窗口过滤
+
+    @MainActor
+    func testEventWindowFilterExcludesMultiDayEventStartedYesterdayEndingToday() {
+        // 昨天开始、今天未结束：重叠语义谓词会查出，但开始早于窗口起点应排除，
+        // 否则会按其 startDate 在列表产生过去天组
+        let event = makeEKEvent(
+            start: makeDate(2026, 10, 15, 20, 0),
+            end: makeDate(2026, 10, 16, 12, 0)
+        )
+
+        let isIncluded = EventService.event(
+            event,
+            isWithinUpcomingWindow: calendar.startOfDay(for: makeDate(2026, 10, 16, 0, 0)),
+            now: makeDate(2026, 10, 16, 10, 0),
+            enabledCalendarIDs: []
+        )
+
+        XCTAssertFalse(isIncluded)
+    }
+
+    @MainActor
+    func testEventWindowFilterExcludesMultiDayEventStartedYesterdayEndingTomorrow() {
+        let event = makeEKEvent(
+            start: makeDate(2026, 10, 15, 20, 0),
+            end: makeDate(2026, 10, 17, 12, 0)
+        )
+
+        let isIncluded = EventService.event(
+            event,
+            isWithinUpcomingWindow: calendar.startOfDay(for: makeDate(2026, 10, 16, 0, 0)),
+            now: makeDate(2026, 10, 16, 10, 0),
+            enabledCalendarIDs: []
+        )
+
+        XCTAssertFalse(isIncluded)
+    }
+
+    @MainActor
+    func testEventWindowFilterIncludesOngoingEventStartedToday() {
+        // 今天零点后开始、仍在进行中的事件应保留（正向对照）
+        let event = makeEKEvent(
+            start: makeDate(2026, 10, 16, 8, 0),
+            end: makeDate(2026, 10, 16, 12, 0)
+        )
+
+        let isIncluded = EventService.event(
+            event,
+            isWithinUpcomingWindow: calendar.startOfDay(for: makeDate(2026, 10, 16, 0, 0)),
+            now: makeDate(2026, 10, 16, 10, 0),
+            enabledCalendarIDs: []
+        )
+
+        XCTAssertTrue(isIncluded)
+    }
+
     // MARK: - 夹具
 
     private func makeDate(
@@ -206,32 +262,27 @@ final class UpcomingSnapshotTests: XCTestCase {
         ).date!
     }
 
-    private func makeEvent(start: Date, end: Date) -> CalendarItem {
+    private func makeEKEvent(start: Date, end: Date, allDay: Bool = false) -> EKEvent {
         let store = EKEventStore()
         let event = EKEvent(eventStore: store)
-        event.title = "事件"
+        event.title = allDay ? "全天事件" : "事件"
         event.startDate = start
         event.endDate = end
         // 固定事件时区，避免全天事件的日期归一化跟随本机时区漂移
         event.timeZone = TimeZone(secondsFromGMT: 0)
+        event.isAllDay = allDay
         if let ekCalendar = store.defaultCalendarForNewEvents {
             event.calendar = ekCalendar
         }
-        return .event(event)
+        return event
+    }
+
+    private func makeEvent(start: Date, end: Date) -> CalendarItem {
+        .event(makeEKEvent(start: start, end: end))
     }
 
     private func makeAllDayEvent(start: Date, end: Date) -> CalendarItem {
-        let store = EKEventStore()
-        let event = EKEvent(eventStore: store)
-        event.title = "全天事件"
-        event.startDate = start
-        event.endDate = end
-        event.timeZone = TimeZone(secondsFromGMT: 0)
-        event.isAllDay = true
-        if let ekCalendar = store.defaultCalendarForNewEvents {
-            event.calendar = ekCalendar
-        }
-        return .event(event)
+        .event(makeEKEvent(start: start, end: end, allDay: true))
     }
 
     private func makeReminder(

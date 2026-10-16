@@ -312,9 +312,11 @@ final class EventService: ObservableObject {
     ///   - includeReminders: 是否纳入有到期时间的未完成提醒
     ///   - enabledReminderCalendarIDs: 参与聚合的提醒列表 ID，空数组表示全部
     /// - Returns: 按开始时间升序的统一条目
-    /// - Note: 事件窗口从当天零点起查、再按 endDate > now 过滤，保证当天进行中
-    ///   与全天事件保留；开始于今天之前的多天事件不纳入。递归提醒按“天”近似
-    ///   展开（见 reminder(_:isDueWithin:windowEnd:calendar:) 的限制说明）。
+    /// - Note: EventKit 窗口谓词为重叠语义，会返回开始早于窗口的事件；再按
+    ///   startDate >= 当天零点且 endDate > now 过滤，保证当天进行中与全天事件
+    ///   保留、开始于今天之前的多天事件不纳入（否则会在列表产生过去天组）。
+    ///   递归提醒按“天”近似展开（见 reminder(_:isDueWithin:windowEnd:calendar:)
+    ///   的限制说明）。
     func fetchUpcomingCalendarItems(
         now: Date,
         windowEnd: Date,
@@ -332,10 +334,13 @@ final class EventService: ObservableObject {
                 end: windowEnd,
                 calendars: nil
             )
-            let events = eventStore.events(matching: predicate).filter { event in
-                guard event.endDate > now else { return false }
-                return enabledCalendarIDs.isEmpty
-                    || enabledCalendarIDs.contains(event.calendar.calendarIdentifier)
+            let events = eventStore.events(matching: predicate).filter {
+                Self.event(
+                    $0,
+                    isWithinUpcomingWindow: windowStart,
+                    now: now,
+                    enabledCalendarIDs: enabledCalendarIDs
+                )
             }
             items.append(contentsOf: events.map { .event($0) })
         }
@@ -396,6 +401,30 @@ final class EventService: ObservableObject {
             }
             return seen.insert(reminder.calendarItemIdentifier).inserted
         }
+    }
+
+    /// 判断事件是否纳入未来日程列表（静态纯函数，供窗口过滤与单元测试复用）。
+    /// - Parameters:
+    ///   - event: 待判定事件，来自 EventKit 重叠语义窗口谓词的查询结果
+    ///   - windowStart: 窗口起点（当天零点）；事件 startDate 不早于它才纳入，
+    ///     避免开始于今天之前的多天事件在列表里产生过去天组
+    ///   - now: 当前时间；事件 endDate 晚于它（进行中或未开始）才纳入
+    ///   - enabledCalendarIDs: 参与聚合的日历 ID，空数组表示全部日历
+    /// - Returns: 纳入返回 true，否则 false；事件未挂载日历（如测试夹具）时
+    ///   无法匹配指定日历，仅在“全部日历”语义下纳入
+    static func event(
+        _ event: EKEvent,
+        isWithinUpcomingWindow windowStart: Date,
+        now: Date,
+        enabledCalendarIDs: [String]
+    ) -> Bool {
+        guard event.endDate > now, event.startDate >= windowStart else {
+            return false
+        }
+        guard let calendarID = event.calendar?.calendarIdentifier else {
+            return enabledCalendarIDs.isEmpty
+        }
+        return enabledCalendarIDs.isEmpty || enabledCalendarIDs.contains(calendarID)
     }
 
     /// 判断提醒是否落在 [windowStart, windowEnd) 窗口内。

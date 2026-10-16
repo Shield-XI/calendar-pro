@@ -40,9 +40,12 @@
 
 - `EventService.fetchUpcomingCalendarItems(now:windowEnd:enabledCalendarIDs:
   includeReminders:enabledReminderCalendarIDs:)`：
-  - 事件用 `predicateForEvents(withStart: 当天零点, end: windowEnd)` 查询，
-    再按 `endDate > now` 过滤，保证当天进行中事件与全天事件保留；
-    开始早于今天的多天事件不纳入（避免在"未来"列表出现过去的天组）。
+  - 事件用 `predicateForEvents(withStart: 当天零点, end: windowEnd)` 查询。
+    该谓词是重叠语义，会返回开始早于窗口的事件，因此本地再按
+    `startDate >= 当天零点 且 endDate > now` 过滤：保证当天进行中事件与全天
+    事件保留，开始早于今天的多天事件不纳入（避免在"未来"列表出现过去的天组）。
+    过滤逻辑抽为静态纯函数 `EventService.event(_:isWithinUpcomingWindow:
+    now:enabledCalendarIDs:)` 供单元测试覆盖边界。
   - 提醒只取未完成项：复用 `fetchReminders` 的处理思路，用
     `predicateForIncompleteReminders(withDueDateStarting: nil, ending: windowEnd)`
     兜住基准到期日早于窗口的递归提醒，再在本地按窗口过滤并按
@@ -81,7 +84,8 @@ EventKit store 变更、选中日期变化与跨天时重新拉取；用请求 I
 - 折叠状态不持久化（见交互设计），是有意取舍而非遗漏。
 - 递归提醒按"天"近似展开（复用单日判定 `isOccurrence` 逐日检查），未处理
   例外日期（excluded dates）等复杂规则；对"未来 N 天"的展示场景足够。
-- 多天事件只在开始日出现在列表中，不做跨天重复展示。
+- 多天事件只在其开始日（不早于窗口起点）出现在列表中，不做跨天重复展示；
+  开始早于今天的多天事件整体不纳入。
 - 事件窗口从当天零点起查：当天已结束的事件被过滤，但当天进行中/全天事件保留。
 - 本地化 key 沿用仓库惯例（英文 key，`zh-Hans` 为源语言）；"今天/明天"使用
   独立 key（`Upcoming Today`/`Upcoming Tomorrow`），不复用菜单栏 token 的

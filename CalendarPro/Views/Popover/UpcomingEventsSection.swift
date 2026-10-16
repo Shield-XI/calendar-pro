@@ -126,17 +126,27 @@ struct UpcomingEventsSection: View {
     @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            headerButton
+        // 快照只在 body 内单次求值，标题计数与展开内容共用同一份分组结果，
+        // 避免 SwiftUI 对计算属性的多次访问触发重复排序与分组
+        let snapshot = UpcomingSnapshot.make(
+            items: items,
+            now: timeRefreshCoordinator.currentDate,
+            calendar: .autoupdatingCurrent
+        )
+
+        return VStack(alignment: .leading, spacing: 8) {
+            headerButton(countText: countText(for: snapshot))
 
             if isExpanded {
-                expandedContent
+                expandedContent(snapshot)
                     .frame(maxHeight: Metrics.expandedMaxHeight)
             }
         }
     }
 
-    private var headerButton: some View {
+    /// 折叠标题按钮。
+    /// - Parameter countText: 右侧计数文案，来自 body 内单次求值的快照
+    private func headerButton(countText: String) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.15)) {
                 isExpanded.toggle()
@@ -165,19 +175,13 @@ struct UpcomingEventsSection: View {
         .accessibilityIdentifier("calendar-popover-upcoming-toggle")
     }
 
-    private var countText: String {
+    /// 标题右侧计数文案：加载中显示 Loading，否则显示条目总数。
+    /// - Parameter snapshot: body 内单次求值的分组快照
+    private func countText(for snapshot: UpcomingSnapshot) -> String {
         if isLoading {
             return L("Loading")
         }
         return LF("%d items", snapshot.totalItemCount)
-    }
-
-    private var snapshot: UpcomingSnapshot {
-        UpcomingSnapshot.make(
-            items: items,
-            now: timeRefreshCoordinator.currentDate,
-            calendar: .autoupdatingCurrent
-        )
     }
 
     private var hasMore: Bool {
@@ -185,8 +189,10 @@ struct UpcomingEventsSection: View {
         dayLimit == 0 || windowDays < dayLimit
     }
 
+    /// 展开态内容：空态文案或按天分组的滚动列表（含“加载更多”入口）。
+    /// - Parameter snapshot: body 内单次求值的分组快照
     @ViewBuilder
-    private var expandedContent: some View {
+    private func expandedContent(_ snapshot: UpcomingSnapshot) -> some View {
         if items.isEmpty, !isLoading {
             Text(L("No Upcoming Events"))
                 .font(.system(size: 12))
