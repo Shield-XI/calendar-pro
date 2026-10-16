@@ -265,7 +265,7 @@ struct MenuBarPreferences: Codable, Equatable {
             upcomingReminderMinutes: 15,
             showUpcomingSection: true,
             upcomingDayLimit: 90,
-            upcomingIncludeReminders: false,
+            upcomingIncludeReminders: true,
             upcomingEnabledCalendarIDs: [],
             upcomingEnabledReminderCalendarIDs: []
         )
@@ -300,7 +300,7 @@ struct MenuBarPreferences: Codable, Equatable {
         upcomingReminderMinutes: 15,
         showUpcomingSection: true,
         upcomingDayLimit: 90,
-        upcomingIncludeReminders: false,
+        upcomingIncludeReminders: true,
         upcomingEnabledCalendarIDs: [],
         upcomingEnabledReminderCalendarIDs: []
     )
@@ -367,7 +367,9 @@ extension MenuBarPreferences {
             upcomingReminderMinutes: try container.decodeIfPresent(Int.self, forKey: .upcomingReminderMinutes) ?? 15,
             showUpcomingSection: try container.decodeIfPresent(Bool.self, forKey: .showUpcomingSection) ?? true,
             upcomingDayLimit: try container.decodeIfPresent(Int.self, forKey: .upcomingDayLimit) ?? 90,
-            upcomingIncludeReminders: try container.decodeIfPresent(Bool.self, forKey: .upcomingIncludeReminders) ?? false,
+            // 带到期时间的提醒默认纳入近期日程；旧数据已显式存为 false 的用户
+            // 保持 false，仅缺失该 key 的历史数据与新用户走默认 true
+            upcomingIncludeReminders: try container.decodeIfPresent(Bool.self, forKey: .upcomingIncludeReminders) ?? true,
             upcomingEnabledCalendarIDs: try container.decodeIfPresent([String].self, forKey: .upcomingEnabledCalendarIDs) ?? [],
             upcomingEnabledReminderCalendarIDs: try container.decodeIfPresent([String].self, forKey: .upcomingEnabledReminderCalendarIDs) ?? []
         )

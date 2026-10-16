@@ -65,7 +65,7 @@ final class MenuBarPreferencesTests: XCTestCase {
 
         XCTAssertTrue(prefs.showUpcomingSection)
         XCTAssertEqual(prefs.upcomingDayLimit, 90)
-        XCTAssertFalse(prefs.upcomingIncludeReminders)
+        XCTAssertTrue(prefs.upcomingIncludeReminders)
         XCTAssertTrue(prefs.upcomingEnabledCalendarIDs.isEmpty)
         XCTAssertTrue(prefs.upcomingEnabledReminderCalendarIDs.isEmpty)
     }
@@ -90,9 +90,32 @@ final class MenuBarPreferencesTests: XCTestCase {
 
         XCTAssertTrue(decoded.showUpcomingSection)
         XCTAssertEqual(decoded.upcomingDayLimit, 90)
-        XCTAssertFalse(decoded.upcomingIncludeReminders)
+        XCTAssertTrue(decoded.upcomingIncludeReminders)
         XCTAssertTrue(decoded.upcomingEnabledCalendarIDs.isEmpty)
         XCTAssertTrue(decoded.upcomingEnabledReminderCalendarIDs.isEmpty)
+    }
+
+    func testDecodingPreservesExplicitUpcomingIncludeRemindersFalse() throws {
+        // 已存 JSON 显式写入 false 的用户保持 false，不受默认值翻转为 true 影响
+        let storedJSON = """
+        {
+          "tokens": [{ "token": "date", "isEnabled": true, "order": 0, "style": "short" }],
+          "separator": " ",
+          "showLunarInMenuBar": false,
+          "activeRegionIDs": [],
+          "enabledHolidayIDs": [],
+          "weekStart": "monday",
+          "showEvents": true,
+          "enabledCalendarIDs": [],
+          "showReminders": true,
+          "enabledReminderCalendarIDs": [],
+          "upcomingIncludeReminders": false
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(MenuBarPreferences.self, from: storedJSON)
+
+        XCTAssertFalse(decoded.upcomingIncludeReminders)
     }
 
     func testCodableRoundTrip() throws {

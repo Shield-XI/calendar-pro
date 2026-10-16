@@ -164,11 +164,11 @@ final class SettingsStoreTests: XCTestCase {
 
         XCTAssertTrue(store.menuBarPreferences.showUpcomingSection)
         XCTAssertEqual(store.menuBarPreferences.upcomingDayLimit, 90)
-        XCTAssertFalse(store.menuBarPreferences.upcomingIncludeReminders)
+        XCTAssertTrue(store.menuBarPreferences.upcomingIncludeReminders)
 
         store.setShowUpcomingSection(false)
         store.setUpcomingDayLimit(180)
-        store.setUpcomingIncludeReminders(true)
+        store.setUpcomingIncludeReminders(false)
         store.setUpcomingCalendarEnabled(
             false,
             calendarID: "calendar-1",
@@ -183,7 +183,7 @@ final class SettingsStoreTests: XCTestCase {
         let reloaded = makeStore(userDefaults: userDefaults)
         XCTAssertFalse(reloaded.menuBarPreferences.showUpcomingSection)
         XCTAssertEqual(reloaded.menuBarPreferences.upcomingDayLimit, 180)
-        XCTAssertTrue(reloaded.menuBarPreferences.upcomingIncludeReminders)
+        XCTAssertFalse(reloaded.menuBarPreferences.upcomingIncludeReminders)
         XCTAssertEqual(reloaded.menuBarPreferences.upcomingEnabledCalendarIDs, ["calendar-2"])
         XCTAssertEqual(reloaded.menuBarPreferences.upcomingEnabledReminderCalendarIDs, ["reminder-2"])
     }
