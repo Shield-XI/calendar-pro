@@ -72,7 +72,7 @@ struct RootPopoverView: View {
     private let almanacService = AlmanacService()
     private let weatherAutoRefreshInterval: TimeInterval = 15 * 60
 
-    /// 未来日程加载窗口的初始天数与每次“加载更多”的扩幅
+    /// 未来日程加载窗口的初始天数与每次滚动到底自动加载的扩幅
     static let initialUpcomingWindowDays = 30
     static let upcomingWindowStepDays = 30
 
@@ -534,8 +534,12 @@ struct RootPopoverView: View {
         }
     }
 
-    /// “加载更多”：窗口按固定步幅扩展，直到设置的上限（0 为无上限）。
+    /// 滚动到底自动加载：窗口按固定步幅扩展，直到设置的上限（0 为无上限）。
+    /// 加载进行中直接忽略触发，从源头挡掉 in-flight 期间的重复调用；
+    /// 过期结果另有 upcomingRequestID 竞态守卫兜底丢弃。
     private func handleLoadMoreUpcoming() {
+        guard !isLoadingUpcoming else { return }
+
         let preferences = settingsStore.menuBarPreferences
         var nextWindow = upcomingWindowDays + RootPopoverView.upcomingWindowStepDays
 

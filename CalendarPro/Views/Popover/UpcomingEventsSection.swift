@@ -4,7 +4,7 @@ import EventKit
 // 文件头：
 // 职责：弹层“未来日程”可折叠分节。UpcomingSnapshot 负责把统一的 CalendarItem
 //       列表按天分组（纯函数，便于测试）；UpcomingEventsSection 负责折叠标题、
-//       天头与条目渲染及“加载更多”入口。
+//       天头与条目渲染及滚动到底自动加载。
 // 输入：EventService.fetchUpcomingCalendarItems 取回的未来窗口内 [CalendarItem]、
 //       当前时间（TimeRefreshCoordinator）与分组用日历。
 // 输出：按天升序分组的快照结构 / 弹层内的分节视图。
@@ -189,7 +189,7 @@ struct UpcomingEventsSection: View {
         dayLimit == 0 || windowDays < dayLimit
     }
 
-    /// 展开态内容：空态文案或按天分组的滚动列表（含“加载更多”入口）。
+    /// 展开态内容：空态文案或按天分组的滚动列表（滚动到底自动加载下一窗口）。
     /// - Parameter snapshot: body 内单次求值的分组快照
     @ViewBuilder
     private func expandedContent(_ snapshot: UpcomingSnapshot) -> some View {
@@ -201,7 +201,10 @@ struct UpcomingEventsSection: View {
                 .padding(.vertical, 4)
         } else {
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 10) {
+                // 用 LazyVStack 而非 VStack：普通 VStack 会一次性物化全部子
+                // 视图，末尾哨兵的 onAppear 在展开瞬间就会立即触发；LazyVStack
+                // 只在子视图滚动到可视区域附近才渲染，哨兵出现即代表“已到底”
+                LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(snapshot.dayGroups) { group in
                         dayGroupView(group)
                     }
@@ -215,7 +218,7 @@ struct UpcomingEventsSection: View {
                         }
                         .padding(.vertical, 4)
                     } else if hasMore {
-                        loadMoreButton
+                        loadMoreTrigger
                     }
                 }
                 .padding(.vertical, 1)
@@ -223,17 +226,17 @@ struct UpcomingEventsSection: View {
         }
     }
 
-    private var loadMoreButton: some View {
-        Button(action: onLoadMore) {
-            Text(L("Load More"))
-                .font(.system(size: 11, weight: .medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .accessibilityIdentifier("calendar-popover-upcoming-load-more")
+    /// 滚动到底的加载哨兵：渲染出现即触发扩窗回调。
+    /// 加载中上方分支换成进度指示、窗口达上限时 hasMore 为 false，两种情况
+    /// 哨兵都不在视图层级内，不会重复触发；一次加载结束后哨兵重新插入并再次
+    /// 触发 onAppear，内容不足一屏时也能连续加载直到占满视口或达上限。
+    private var loadMoreTrigger: some View {
+        Color.clear
+            .frame(height: 1)
+            .onAppear {
+                guard !isLoading, hasMore else { return }
+                onLoadMore()
+            }
     }
 
     private func dayGroupView(_ group: UpcomingDayGroup) -> some View {

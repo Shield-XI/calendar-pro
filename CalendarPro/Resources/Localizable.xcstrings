@@ -2876,23 +2876,6 @@
         }
       }
     },
-    "Load More" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Load More"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加载更多"
-          }
-        }
-      }
-    },
     "Loading" : {
       "extractionState" : "stale",
       "localizations" : {

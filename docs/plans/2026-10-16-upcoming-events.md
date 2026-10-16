@@ -10,7 +10,7 @@
 - `CalendarPro/Views/Popover/UpcomingEventsSection.swift`：
   `UpcomingSnapshot` 纯函数（按天分组升序 + 天头文案）与
   `UpcomingEventsSection` 可折叠分节视图（标题行 + 计数、内部滚动内容区、
-  加载更多按钮、条目复用 `EventCardView`）。
+  滚动到底自动加载、条目复用 `EventCardView`）。
 - `CalendarProTests/Popover/UpcomingSnapshotTests.swift`：跨天分组升序、
   同一天全天在前/按时间排序、空输入、无开始日期条目忽略，以及
   `EventService.reminder(isDueWithin:)` 的窗口过滤与每日/每周递归近似展开用例。
@@ -94,8 +94,29 @@ xcodebuild test -project CalendarPro.xcodeproj -scheme CalendarPro \
 UI 用例因本机 Runner 冷启动被杀（testmanagerd 提前终止，属既有环境问题，
 与本次改动无关，UI 测试代码未变动）未能运行，如实记录。
 
+## 滚动自动加载改造（2026-10-16）
+
+分页触发从「点击底部加载更多按钮」改为「滚动到底自动加载」，窗口渐进扩展
+逻辑（首窗 30 天，每次 +30 天至上限 30/90/180/全部）不变：
+
+- `UpcomingEventsSection`：列表容器由 `VStack` 改为 `LazyVStack`（普通
+  VStack 一次性物化全部子视图，末尾哨兵的 onAppear 会在展开瞬间立即触发）；
+  移除「加载更多」按钮，改为末尾 1pt `Color.clear` 哨兵挂 `onAppear` 触发
+  扩窗回调。加载中哨兵被进度指示替换、达上限时 `hasMore` 为 false，两种
+  情况哨兵都不在视图层级内防重复触发；一次加载结束后哨兵重新插入并再次
+  触发 onAppear，内容不足一屏时连续加载至占满视口或达上限。
+- `RootPopoverView.handleLoadMoreUpcoming`：新增 `isLoadingUpcoming`
+  在-flight 守卫（既有 `upcomingRequestID` 竞态守卫不变）。
+- `Localizable.xcstrings`：删除不再被引用的 `Load More` key（en 与 zh-Hans）。
+
+验证：`xcodebuild build` 热身后
+`xcodebuild test ... -skip-testing:CalendarProUITests`，单测
+`Executed 388 tests, with 0 failures (0 unexpected)`，TEST SUCCEEDED；
+UI 测试因本机 Runner 环境问题按基线跳过（与本次改动无关，UI 测试代码未
+变动），触发链路以人工滚动验证为准。
+
 ## 未确定项 / 后续可迭代
 
-- 「加载更多」扩窗后不做已加载数据的增量合并，每次全量重查（窗口内数据量小，可接受）。
+- 扩窗后不做已加载数据的增量合并，每次全量重查（窗口内数据量小，可接受）。
 - 递归提醒按天近似展开（见设计文档限制），如需精确支持例外日期需引入
   EventKit 逐展开查询或本地完整递归求解。
