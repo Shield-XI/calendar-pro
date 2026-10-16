@@ -65,6 +65,13 @@ struct UpcomingEventsSettingsView: View {
         )
     }
 
+    private var upcomingDefaultExpandedBinding: Binding<Bool> {
+        Binding(
+            get: { store.menuBarPreferences.upcomingDefaultExpanded },
+            set: { store.setUpcomingDefaultExpanded($0) }
+        )
+    }
+
     private func upcomingCalendarEnabledBinding(for calendarID: String) -> Binding<Bool> {
         Binding(
             get: {
@@ -108,6 +115,14 @@ struct UpcomingEventsSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if store.menuBarPreferences.showUpcomingSection {
+                Toggle(L("Expand by Default"), isOn: upcomingDefaultExpandedBinding)
+                    .toggleStyle(.checkbox)
+
+                Text(L("Expand by Default Description"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 HStack {
                     Text(L("Recent Day Limit"))
                     Spacer()

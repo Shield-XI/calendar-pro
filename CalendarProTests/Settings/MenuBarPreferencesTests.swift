@@ -66,6 +66,7 @@ final class MenuBarPreferencesTests: XCTestCase {
         XCTAssertTrue(prefs.showUpcomingSection)
         XCTAssertEqual(prefs.upcomingDayLimit, 90)
         XCTAssertTrue(prefs.upcomingIncludeReminders)
+        XCTAssertTrue(prefs.upcomingDefaultExpanded)
         XCTAssertTrue(prefs.upcomingEnabledCalendarIDs.isEmpty)
         XCTAssertTrue(prefs.upcomingEnabledReminderCalendarIDs.isEmpty)
     }
@@ -91,6 +92,7 @@ final class MenuBarPreferencesTests: XCTestCase {
         XCTAssertTrue(decoded.showUpcomingSection)
         XCTAssertEqual(decoded.upcomingDayLimit, 90)
         XCTAssertTrue(decoded.upcomingIncludeReminders)
+        XCTAssertTrue(decoded.upcomingDefaultExpanded)
         XCTAssertTrue(decoded.upcomingEnabledCalendarIDs.isEmpty)
         XCTAssertTrue(decoded.upcomingEnabledReminderCalendarIDs.isEmpty)
     }

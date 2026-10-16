@@ -398,6 +398,13 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
+    func setUpcomingDefaultExpanded(_ enabled: Bool) {
+        var prefs = menuBarPreferences
+        prefs.upcomingDefaultExpanded = enabled
+        menuBarPreferences = prefs
+        persistMenuBarPreferences()
+    }
+
     func setUpcomingCalendarEnabled(_ enabled: Bool, calendarID: String, allCalendarIDs: [String] = []) {
         let hasAllCalendarIDs = !allCalendarIDs.isEmpty
         var ids = menuBarPreferences.upcomingEnabledCalendarIDs

@@ -178,6 +178,7 @@ struct MenuBarPreferences: Codable, Equatable {
     var showUpcomingSection: Bool
     var upcomingDayLimit: Int
     var upcomingIncludeReminders: Bool
+    var upcomingDefaultExpanded: Bool = true
     var upcomingEnabledCalendarIDs: [String]
     var upcomingEnabledReminderCalendarIDs: [String]
 
@@ -266,6 +267,7 @@ struct MenuBarPreferences: Codable, Equatable {
             showUpcomingSection: true,
             upcomingDayLimit: 90,
             upcomingIncludeReminders: true,
+            upcomingDefaultExpanded: true,
             upcomingEnabledCalendarIDs: [],
             upcomingEnabledReminderCalendarIDs: []
         )
@@ -301,6 +303,7 @@ struct MenuBarPreferences: Codable, Equatable {
         showUpcomingSection: true,
         upcomingDayLimit: 90,
         upcomingIncludeReminders: true,
+        upcomingDefaultExpanded: true,
         upcomingEnabledCalendarIDs: [],
         upcomingEnabledReminderCalendarIDs: []
     )
@@ -333,6 +336,7 @@ extension MenuBarPreferences {
         case showUpcomingSection
         case upcomingDayLimit
         case upcomingIncludeReminders
+        case upcomingDefaultExpanded
         case upcomingEnabledCalendarIDs
         case upcomingEnabledReminderCalendarIDs
     }
@@ -370,6 +374,7 @@ extension MenuBarPreferences {
             // 带到期时间的提醒默认纳入近期日程；旧数据已显式存为 false 的用户
             // 保持 false，仅缺失该 key 的历史数据与新用户走默认 true
             upcomingIncludeReminders: try container.decodeIfPresent(Bool.self, forKey: .upcomingIncludeReminders) ?? true,
+            upcomingDefaultExpanded: try container.decodeIfPresent(Bool.self, forKey: .upcomingDefaultExpanded) ?? true,
             upcomingEnabledCalendarIDs: try container.decodeIfPresent([String].self, forKey: .upcomingEnabledCalendarIDs) ?? [],
             upcomingEnabledReminderCalendarIDs: try container.decodeIfPresent([String].self, forKey: .upcomingEnabledReminderCalendarIDs) ?? []
         )
@@ -422,6 +427,7 @@ extension MenuBarPreferences {
         try container.encode(showUpcomingSection, forKey: .showUpcomingSection)
         try container.encode(upcomingDayLimit, forKey: .upcomingDayLimit)
         try container.encode(upcomingIncludeReminders, forKey: .upcomingIncludeReminders)
+        try container.encode(upcomingDefaultExpanded, forKey: .upcomingDefaultExpanded)
         try container.encode(upcomingEnabledCalendarIDs, forKey: .upcomingEnabledCalendarIDs)
         try container.encode(upcomingEnabledReminderCalendarIDs, forKey: .upcomingEnabledReminderCalendarIDs)
     }

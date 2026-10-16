@@ -1802,6 +1802,40 @@
         }
       }
     },
+    "Expand by Default" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand by Default"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认展开版块"
+          }
+        }
+      }
+    },
+    "Expand by Default Description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand the recent events section when the popover opens."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开弹层时默认展开近期日程版块。"
+          }
+        }
+      }
+    },
     "Events off" : {
       "extractionState" : "stale",
       "localizations" : {

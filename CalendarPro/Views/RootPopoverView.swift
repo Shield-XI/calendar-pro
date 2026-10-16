@@ -153,6 +153,7 @@ struct RootPopoverView: View {
             isLoadingUpcoming: isLoadingUpcoming,
             upcomingWindowDays: upcomingWindowDays,
             upcomingDayLimit: settingsStore.menuBarPreferences.upcomingDayLimit,
+            upcomingDefaultExpanded: settingsStore.menuBarPreferences.upcomingDefaultExpanded,
             selectedDate: viewModel.selectedDate,
             items: itemsForSelectedDate,
             selectedEventIdentifier: viewModel.selectedEventIdentifier,

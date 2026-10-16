@@ -115,6 +115,7 @@ struct UpcomingEventsSection: View {
     let isLoading: Bool
     let windowDays: Int
     let dayLimit: Int
+    let defaultExpanded: Bool
     let timeRefreshCoordinator: TimeRefreshCoordinator
     let selectedEventIdentifier: String?
     let onLoadMore: () -> Void
@@ -122,8 +123,36 @@ struct UpcomingEventsSection: View {
     let onOpenReminder: (EKReminder) -> Void
     let onToggleReminder: (EKReminder) -> Void
 
-    // 折叠状态只记在视图内：弹层每次打开都回到默认收起，成本最低
-    @State private var isExpanded = false
+    // 折叠状态只记在视图内：初始展开态读「默认展开版块」设置，弹层每次
+    // 打开重新按设置取初值；会话内手动折叠即时生效，不持久化
+    @State private var isExpanded: Bool
+
+    init(
+        items: [CalendarItem],
+        isLoading: Bool,
+        windowDays: Int,
+        dayLimit: Int,
+        defaultExpanded: Bool,
+        timeRefreshCoordinator: TimeRefreshCoordinator,
+        selectedEventIdentifier: String?,
+        onLoadMore: @escaping () -> Void,
+        onSelectEvent: @escaping (EKEvent) -> Void,
+        onOpenReminder: @escaping (EKReminder) -> Void,
+        onToggleReminder: @escaping (EKReminder) -> Void
+    ) {
+        self.items = items
+        self.isLoading = isLoading
+        self.windowDays = windowDays
+        self.dayLimit = dayLimit
+        self.defaultExpanded = defaultExpanded
+        self.timeRefreshCoordinator = timeRefreshCoordinator
+        self.selectedEventIdentifier = selectedEventIdentifier
+        self.onLoadMore = onLoadMore
+        self.onSelectEvent = onSelectEvent
+        self.onOpenReminder = onOpenReminder
+        self.onToggleReminder = onToggleReminder
+        _isExpanded = State(initialValue: defaultExpanded)
+    }
 
     var body: some View {
         // 快照只在 body 内单次求值，标题计数与展开内容共用同一份分组结果，
