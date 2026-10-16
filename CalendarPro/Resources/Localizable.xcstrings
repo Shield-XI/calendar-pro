@@ -1156,6 +1156,23 @@
         }
       }
     },
+    "Configure Recent Events" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configure the recent events section"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置近期日程版块"
+          }
+        }
+      }
+    },
     "Countdown" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5983,6 +6000,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "近期日程"
+          }
+        }
+      }
+    },
+    "Recent Events Detail Description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose whether the recent events section shows in the popover, its time window, and the sources included."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择近期日程版块是否在弹层中显示，以及时间范围与包含的数据来源。"
           }
         }
       }
