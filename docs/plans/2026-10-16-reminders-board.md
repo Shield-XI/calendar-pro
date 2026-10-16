@@ -79,6 +79,25 @@
   每次渲染单次计算；到期格式器按（含时刻+语言）静态缓存；loadBoard 落地
   守卫补列表/已完成偏好快照比对（仿 loadEvents 过期校验）。
 
+## 设置入口拆分（2026-10-16 第三轮）
+
+用户反馈「两个新功能创建两个新的菜单」：看板设置从「日程」页拆出为侧栏
+独立「提醒事项」页，原样迁移、不改功能逻辑。
+
+- `CalendarPro/Views/Settings/RemindersSettingsView.swift`（新增）：承载原
+  「提醒看板」GroupBox（开关、列表勾选、分组模式、显示已完成、颜色模式、
+  预设 Picker、颜色网格）及配套绑定与 hex 转换；permissionRow 为本页复制
+  的小工具（避免为迁移做跨文件重构）。
+- `CalendarPro/Views/Settings/SettingsRootView.swift`：`SettingsSidebarItem`
+  新增 `.reminders`（icon `checklist`，位于 `.events` 之后），
+  detailView 挂接 RemindersSettingsView。
+- `CalendarPro/Views/Settings/EventsSettingsView.swift`：移除「提醒看板」
+  GroupBox 与看板专属绑定/分节，日程源与提醒列表设置保持不变。
+- `CalendarPro/Resources/Localizable.xcstrings`：新增 3 条（Reminders、
+  Manage Reminders Board、Reminders Detail Description），en/zh-Hans 双语。
+- regen 后核对：Package.resolved 保持 Sparkle 2.9.1 未漂移；
+  MARKETING_VERSION 0.2.6 / CURRENT_PROJECT_VERSION 9 已恢复。
+
 ## 验证
 
 - `ruby tools/generate_xcodeproj.rb` 重建工程（新增源码与测试文件纳入）。

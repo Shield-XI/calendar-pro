@@ -3408,6 +3408,23 @@
         }
       }
     },
+    "Manage Reminders Board" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage reminders board"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理提醒事项看板"
+          }
+        }
+      }
+    },
     "Manual" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4781,6 +4798,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "和风天气需要先创建开发者账号，并在项目中获取 API Host 和 API Key，天气才能更新。"
+          }
+        }
+      }
+    },
+    "Reminders" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminders"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒事项"
+          }
+        }
+      }
+    },
+    "Reminders Detail Description" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manage the reminders board toggle, reminder lists, grouping mode and color presets."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理提醒事项看板开关、看板提醒列表、分组模式与配色方案。"
           }
         }
       }
@@ -7061,9 +7112,7 @@
     "当前未启用调休上班日，推荐结果可能不完整。" : {
 
     },
-    "性价比 %lld/5" : {
-
-    }
+    "性价比 %lld/5" : {}
   },
   "version" : "1.0"
 }
