@@ -4,8 +4,9 @@ import EventKit
 
 // 文件头：
 // 职责：验证 UpcomingSnapshot 的按天分组纯函数（含双向窗口下的过去天组、
-//       「昨天」天头与多天事件单次分组），以及 EventService 事件/提醒
-//       近期窗口过滤（含递归展开近似）的行为。
+//       「昨天」天头与多天事件单次分组）、EventService 事件/提醒近期窗口
+//       过滤（含递归展开近似），以及 RootPopoverView 未来端扩窗达界判定
+//       纯函数的行为。
 // 输入：GMT 固定日历 + DateComponents 构造的固定日期与 EventKit 夹具。
 // 输出：XCTest 断言结果。
 // 依赖：XCTest、EventKit、@testable CalendarPro。
@@ -331,6 +332,110 @@ final class UpcomingSnapshotTests: XCTestCase {
         )
 
         XCTAssertTrue(isIncluded)
+    }
+
+    // MARK: - RootPopoverView.isUpcomingFutureWindowExhausted 未来端达界判定
+
+    func testFutureExhaustionFalseWhenNewItemStartsInExtensionBand() {
+        // 扩窗区间 [旧端点, 新端点) 内有新条目 → 未达未来终点
+        let previousFutureEnd = makeDate(2026, 11, 15, 0, 0)
+        let newFutureEnd = makeDate(2026, 12, 15, 0, 0)
+        let newEvent = makeEvent(
+            start: makeDate(2026, 11, 20, 9, 0),
+            end: makeDate(2026, 11, 20, 10, 0)
+        )
+
+        let isExhausted = RootPopoverView.isUpcomingFutureWindowExhausted(
+            items: [newEvent],
+            previousFutureEnd: previousFutureEnd,
+            newFutureEnd: newFutureEnd
+        )
+
+        XCTAssertFalse(isExhausted)
+    }
+
+    func testFutureExhaustionTrueWhenNoItemStartsInExtensionBand() {
+        // 全部条目都开始于旧端点之前（扩窗没带新东西）→ 已达未来终点，
+        // 防止 dayLimit=0 时哨兵无限循环
+        let previousFutureEnd = makeDate(2026, 11, 15, 0, 0)
+        let newFutureEnd = makeDate(2026, 12, 15, 0, 0)
+        let oldEvent = makeEvent(
+            start: makeDate(2026, 11, 10, 9, 0),
+            end: makeDate(2026, 11, 10, 10, 0)
+        )
+
+        let isExhausted = RootPopoverView.isUpcomingFutureWindowExhausted(
+            items: [oldEvent],
+            previousFutureEnd: previousFutureEnd,
+            newFutureEnd: newFutureEnd
+        )
+
+        XCTAssertTrue(isExhausted)
+    }
+
+    func testFutureExhaustionTrueForEmptyResult() {
+        let isExhausted = RootPopoverView.isUpcomingFutureWindowExhausted(
+            items: [],
+            previousFutureEnd: makeDate(2026, 11, 15, 0, 0),
+            newFutureEnd: makeDate(2026, 12, 15, 0, 0)
+        )
+
+        XCTAssertTrue(isExhausted)
+    }
+
+    func testFutureExhaustionTreatsStartAtPreviousEndAsNewFutureItem() {
+        // 开始时间恰好等于旧端点的条目计入新扩展区间（左闭），避免误判达界
+        let previousFutureEnd = makeDate(2026, 11, 15, 0, 0)
+        let newFutureEnd = makeDate(2026, 12, 15, 0, 0)
+        let boundaryEvent = makeEvent(
+            start: previousFutureEnd,
+            end: makeDate(2026, 11, 15, 10, 0)
+        )
+
+        let isExhausted = RootPopoverView.isUpcomingFutureWindowExhausted(
+            items: [boundaryEvent],
+            previousFutureEnd: previousFutureEnd,
+            newFutureEnd: newFutureEnd
+        )
+
+        XCTAssertFalse(isExhausted)
+    }
+
+    func testFutureExhaustionIgnoresItemAtOrBeyondNewWindowEnd() {
+        // 开始时间不早于新端点的条目不计入（右开），不阻止达界判定
+        let previousFutureEnd = makeDate(2026, 11, 15, 0, 0)
+        let newFutureEnd = makeDate(2026, 12, 15, 0, 0)
+        let atEndEvent = makeEvent(
+            start: newFutureEnd,
+            end: makeDate(2026, 12, 15, 10, 0)
+        )
+        let beyondEndEvent = makeEvent(
+            start: makeDate(2026, 12, 20, 9, 0),
+            end: makeDate(2026, 12, 20, 10, 0)
+        )
+
+        let isExhausted = RootPopoverView.isUpcomingFutureWindowExhausted(
+            items: [atEndEvent, beyondEndEvent],
+            previousFutureEnd: previousFutureEnd,
+            newFutureEnd: newFutureEnd
+        )
+
+        XCTAssertTrue(isExhausted)
+    }
+
+    @MainActor
+    func testFutureExhaustionIgnoresItemWithoutStartDate() {
+        // 无到期时间的提醒没有开始日期，无法落入扩展区间，不参与判定
+        let reminderWithoutDueDate = EKReminder(eventStore: EKEventStore())
+        reminderWithoutDueDate.title = "无到期提醒"
+
+        let isExhausted = RootPopoverView.isUpcomingFutureWindowExhausted(
+            items: [CalendarItem.reminder(reminderWithoutDueDate)],
+            previousFutureEnd: makeDate(2026, 11, 15, 0, 0),
+            newFutureEnd: makeDate(2026, 12, 15, 0, 0)
+        )
+
+        XCTAssertTrue(isExhausted)
     }
 
     // MARK: - 夹具

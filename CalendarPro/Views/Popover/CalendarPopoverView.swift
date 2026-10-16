@@ -40,6 +40,7 @@ struct CalendarPopoverView: View {
     let upcomingWindowDays: Int
     let upcomingDayLimit: Int
     let hasMoreUpcomingPast: Bool
+    let hasMoreUpcomingFuture: Bool
     let upcomingDefaultExpanded: Bool
     let selectedDate: Date?
     let items: [CalendarItem]
@@ -173,6 +174,7 @@ struct CalendarPopoverView: View {
                     windowDays: upcomingWindowDays,
                     dayLimit: upcomingDayLimit,
                     hasMorePast: hasMoreUpcomingPast,
+                    hasMoreFuture: hasMoreUpcomingFuture,
                     defaultExpanded: upcomingDefaultExpanded,
                     timeRefreshCoordinator: timeRefreshCoordinator,
                     selectedEventIdentifier: selectedEventIdentifier,

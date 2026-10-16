@@ -125,6 +125,7 @@ struct UpcomingEventsSection: View {
     let windowDays: Int
     let dayLimit: Int
     let hasMorePast: Bool
+    let hasMoreFuture: Bool
     let defaultExpanded: Bool
     let timeRefreshCoordinator: TimeRefreshCoordinator
     let selectedEventIdentifier: String?
@@ -153,6 +154,7 @@ struct UpcomingEventsSection: View {
         windowDays: Int,
         dayLimit: Int,
         hasMorePast: Bool,
+        hasMoreFuture: Bool,
         defaultExpanded: Bool,
         timeRefreshCoordinator: TimeRefreshCoordinator,
         selectedEventIdentifier: String?,
@@ -168,6 +170,7 @@ struct UpcomingEventsSection: View {
         self.windowDays = windowDays
         self.dayLimit = dayLimit
         self.hasMorePast = hasMorePast
+        self.hasMoreFuture = hasMoreFuture
         self.defaultExpanded = defaultExpanded
         self.timeRefreshCoordinator = timeRefreshCoordinator
         self.selectedEventIdentifier = selectedEventIdentifier
@@ -244,9 +247,11 @@ struct UpcomingEventsSection: View {
         return LF("%d items", snapshot.totalItemCount)
     }
 
-    /// 未来端是否还能继续扩窗：dayLimit 为 0 表示不限制窗口大小。
-    private var hasMoreFuture: Bool {
-        dayLimit == 0 || windowDays < dayLimit
+    /// 底部哨兵是否继续渲染：未来端未探明终点（hasMoreFuture 来自
+    /// RootPopoverView 的 exhaustion 标记）且未达设置上限（dayLimit 为 0
+    /// 表示不限制窗口大小）。
+    private var canLoadMoreFuture: Bool {
+        hasMoreFuture && (dayLimit == 0 || windowDays < dayLimit)
     }
 
     /// 展开态内容：空态文案或按天分组的滚动列表（双向窗口，滚动到端点
@@ -278,7 +283,7 @@ struct UpcomingEventsSection: View {
 
                     if isLoadingFuture {
                         progressRow
-                    } else if hasMoreFuture {
+                    } else if canLoadMoreFuture {
                         loadFutureTrigger
                     }
                 }
@@ -313,15 +318,15 @@ struct UpcomingEventsSection: View {
     }
 
     /// 滚动到底的加载哨兵：渲染出现即触发向未来扩窗回调。
-    /// 加载中上方分支换成进度指示、窗口达上限时 hasMoreFuture 为 false，
-    /// 两种情况哨兵都不在视图层级内，不会重复触发；一次加载结束后哨兵
-    /// 重新插入并再次触发 onAppear，内容不足一屏时也能连续加载直到占满
-    /// 视口或达上限。
+    /// 加载中上方分支换成进度指示、探明未来终点（hasMoreFuture 为 false）
+    /// 或达设置上限（canLoadMoreFuture 为 false）时哨兵都不在视图层级内，
+    /// 不会重复触发；一次加载结束后哨兵重新插入并再次触发 onAppear，内容
+    /// 不足一屏时也能连续加载直到占满视口、达上限或探明终点。
     private var loadFutureTrigger: some View {
         Color.clear
             .frame(height: 1)
             .onAppear {
-                guard !isLoadingFuture, hasMoreFuture else { return }
+                guard !isLoadingFuture, canLoadMoreFuture else { return }
                 onLoadMoreFuture()
             }
     }
