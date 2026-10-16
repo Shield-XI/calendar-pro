@@ -158,7 +158,9 @@ UI 测试因本机 Runner 环境问题按基线跳过（与本次改动无关，
   同步；属性带默认值，既有成员逐一构造调用点零改动。
 - `UpcomingEventsSection` 显式 init 以 `State(initialValue:)` 取设置值，
   弹层重开按设置取初态，会话内手动折叠不持久化；「近期日程」设置页
-  新增「默认展开版块」开关。
+  新增「默认展开版块」开关。（实现描述修正：`State(initialValue:)` 只在
+  视图首次创建时生效，弹层重开取新设置值实际由 body 的 onAppear 重置
+  展开态实现，见下文「验收修复记录（第二批）」。）
 
 ### 5. 双向窗口 + 打开刷新（commit 35f7bd2）
 
@@ -207,6 +209,82 @@ xcodebuild test -project CalendarPro.xcodeproj -scheme CalendarPro \
 
 UI 测试因本机 Runner 环境问题按基线跳过（与本次改动无关，UI 测试代码
 未变动）；弹层滚动加载链路以人工验证为准。
+
+## 验收修复记录（第二批，2026-10-16）
+
+动态工作流验收核实三项问题，逐项独立提交修复：
+
+### 1. en 文案残留（commit bc905f6）
+
+- `Localizable.xcstrings`：key `Choose Calendars for Recent` 的 en 值
+  `Choose Calendars for Upcoming` 改为 `Choose Calendars for Recent
+  Events`；key `Choose Reminder Lists for Recent` 同理改为 `Choose
+  Reminder Lists for Recent Events`。为第二批更名时的漏改项，
+  zh-Hans 取值本就正确不动。
+
+### 2. 默认展开设置弹层重开不生效（commit 532971d）
+
+- 根因（验收探针证实）：`PopoverController` 一次性创建并复用
+  `PopoverSizingHostingController`，弹层重开时 `UpcomingEventsSection`
+  视图实例存活，`State(initialValue:)` 只在视图首次创建时取值；
+  onAppear 虽重新触发但 `@State` 不重置。
+- 修法：`UpcomingEventsSection` body 挂 onAppear（内容视图重新挂载即
+  触发），按传入的 `defaultExpanded` 重置 `isExpanded`。分节视图此前
+  未挂 onAppear（哨兵的 onAppear 是子视图私有修饰），无合并冲突。
+  打开期间手动折叠不触发 onAppear，不受影响——弹层每次打开取设置
+  初值、打开期间手动折叠即时生效的语义不变。
+- 同步修正代码状态注释、init 函数头与本记录第 4 条中「视图重建时
+  重新取初值」的不准确描述。
+
+### 3. dayLimit=0 未来端哨兵无限循环（commit cd9a66f）
+
+- 根因（验收核实）：dayLimit=0 时 `hasMoreFuture` 恒 true，扩窗带不回
+  新条目时哨兵重新插入再触发，永久 Loading 且 EventKit 查询窗口
+  越滚越大。
+- 修法（与过去端 `isUpcomingPastExhausted` 对称）：
+  - `RootPopoverView` 新增纯函数
+    `isUpcomingFutureWindowExhausted(items:previousFutureEnd:newFutureEnd:)`：
+    本轮扩窗带不回任何开始日期落在扩展区间 [旧端点, 新端点) 内的
+    条目时置位（左闭右开；无开始日期条目不参与判定）。
+  - `loadUpcoming` 增加 `futureExtensionBoundary` 参数（与过去端
+    `pastExtensionBoundary` 对称），`handleLoadMoreUpcomingFuture`
+    扩窗前捕获旧未来端点传入，结果到达后据此置位/保留标记。
+  - 复位时机与过去端完全一致：授权变化、提醒授权变化、设置变化、
+    store 变更、跨天共 5 处（选中日期变化两端均不复位，保持对称）。
+  - `UpcomingEventsSection` 新增 `hasMoreFuture` 入参（exhaustion
+    来源，与 `hasMorePast` 同型）；原 dayLimit 组合判定改名
+    `canLoadMoreFuture = hasMoreFuture && (dayLimit == 0 ||
+    windowDays < dayLimit)`，哨兵渲染分支与 onAppear 守卫随之收紧；
+    `CalendarPopoverView` 透传 `hasMoreUpcomingFuture`。
+- 可测性评估：判定逻辑可纯函数化（输入条目数组 + 区间两端，无
+  `@State` 依赖），已抽为静态函数并补 6 条单测：区间命中不达界、
+  全旧条目达界、空结果达界、左闭端点计入、右开端点不计入、无开始
+  日期条目忽略。
+- 已知取舍（PR 说明用）：未来端存在超过一个扩窗步幅（30 天）空档的
+  事件时提前停止加载，与过去端「带不回即历史起点」启发式对称，仅
+  无限制（dayLimit=0）模式受影响。
+- 明确不改项：长多天事件跨扩窗边界误触发过去端 exhaustion 属已裁定
+  的可接受取舍，本批未动其过滤语义。
+
+### 验证
+
+```bash
+xcodebuild build -project CalendarPro.xcodeproj -scheme CalendarPro \
+  -destination 'platform=macOS' -derivedDataPath .dd
+# BUILD SUCCEEDED（三批改动各提交前均单独通过）
+
+xcodebuild test -project CalendarPro.xcodeproj -scheme CalendarPro \
+  -destination 'platform=macOS' -derivedDataPath .dd \
+  -skip-testing:CalendarProUITests
+# Executed 405 tests, with 0 failures (0 unexpected)
+```
+
+备注：基线 3f041df 实际含 399 条测试函数（此前记录的 393 为上一批
+当时的数字，其后批次的用例增量未回填），405 = 399 + 本批新增 6 条，
+`xcodebuild` 总数与源码 `func test` 计数一致，无跳过或统计口径差异。
+已知的偶发 flaky 用例 `testStoreChangeRevisionIncrementsOnNotification`
+本轮未复现。UI 测试按基线跳过（本机 Runner 环境问题，UI 测试代码未
+变动）；弹层重开展开态与无限循环链路以人工验证为准。
 
 ## 未确定项 / 后续可迭代
 
