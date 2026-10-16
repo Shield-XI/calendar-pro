@@ -443,10 +443,11 @@ struct EventsSettingsView: View {
             }
 
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
-                ForEach(0..<colorKeyRowCount, id: \.self) { rowIndex in
+                ForEach(boardColorKeyRows.indices, id: \.self) { rowIndex in
                     GridRow {
-                        boardColorPickerCell(key: boardColorKeys[rowIndex * 2])
-                        boardColorPickerCell(key: boardColorKeys[rowIndex * 2 + 1])
+                        ForEach(boardColorKeyRows[rowIndex]) { key in
+                            boardColorPickerCell(key: key)
+                        }
                     }
                 }
             }
@@ -455,8 +456,11 @@ struct EventsSettingsView: View {
 
     private let boardColorKeys = BoardColorKey.allCases
 
-    private var colorKeyRowCount: Int {
-        boardColorKeys.count / 2
+    /// 颜色键按每行两个切分；键总数为奇数时末行单格渲染，不越界。
+    private var boardColorKeyRows: [[BoardColorKey]] {
+        stride(from: 0, to: boardColorKeys.count, by: 2).map { start in
+            Array(boardColorKeys[start..<min(start + 2, boardColorKeys.count)])
+        }
     }
 
     private func boardColorPickerCell(key: BoardColorKey) -> some View {

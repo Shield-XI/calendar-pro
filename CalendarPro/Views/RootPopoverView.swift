@@ -536,7 +536,11 @@ struct RootPopoverView: View {
                 includeCompleted: includeCompleted
             )
             await MainActor.run {
-                guard settingsStore.menuBarPreferences.showRemindersBoard else { return }
+                // 仿 loadEvents 的过期校验：取数期间偏好变化则丢弃本次结果，等待下一次触发。
+                let currentPreferences = settingsStore.menuBarPreferences
+                guard currentPreferences.showRemindersBoard,
+                      currentPreferences.boardEnabledReminderCalendarIDs == enabledCalendarIDs,
+                      currentPreferences.boardShowCompleted == includeCompleted else { return }
                 boardReminders = reminders
             }
         }

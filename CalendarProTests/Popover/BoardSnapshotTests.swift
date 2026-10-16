@@ -215,18 +215,35 @@ final class BoardSnapshotTests: XCTestCase {
     func testCompletedRowsUseCompletedColorAndFilterByShowCompleted() {
         let reminders = [
             makeReminder(title: "done", due: makeDate(10, 10), isCompleted: true),
+            makeReminder(title: "done-no-date", due: nil, isCompleted: true),
             makeReminder(title: "todo", due: makeDate(10, 17))
         ]
 
         for colorMode in RemindersBoardColorMode.allCases {
             let visible = makeSnapshot(reminders, colorMode: colorMode, showCompleted: true)
                 .groups[0].rows
-            XCTAssertEqual(visible.count, 2)
+            XCTAssertEqual(visible.count, 3)
 
+            // 已完成恒用 completed 色：任务行标题/勾选图标/到期标签共用该值着色。
             let done = visible.first { $0.title == "done" }
             XCTAssertEqual(done?.colorHex, BoardColorPreferences.classic.completed)
             XCTAssertTrue(done?.isCompleted ?? false)
+
+            let doneNoDate = visible.first { $0.title == "done-no-date" }
+            XCTAssertEqual(doneNoDate?.colorHex, BoardColorPreferences.classic.completed)
         }
+
+        // completed 优先于无日期色：用两者取值不同的调色板验证已完成且无日期不给 noDate 色。
+        var distinctPalette = BoardColorPreferences.classic
+        distinctPalette.noDate = "#00FF00"
+
+        let withDistinctNoDate = makeSnapshot(
+            [makeReminder(title: "done-no-date", due: nil, isCompleted: true)],
+            colorPreferences: distinctPalette,
+            showCompleted: true
+        ).groups[0].rows
+
+        XCTAssertEqual(withDistinctNoDate.first?.colorHex, distinctPalette.completed)
 
         let hidden = makeSnapshot(reminders, showCompleted: false)
         XCTAssertEqual(hidden.groups[0].rows.map(\.title), ["todo"])

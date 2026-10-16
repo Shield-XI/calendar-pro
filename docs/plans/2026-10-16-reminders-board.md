@@ -66,6 +66,19 @@
 | priorityNone 无优先级 | #9CA3AF | #A8A29E | #94A3B8 | #8E8E93 |
 | completed 已完成 | #9CA3AF | #A8A29E | #94A3B8 | #8E8E93 |
 
+## 验收修复（2026-10-16 第二轮）
+
+- 已完成行标题颜色：原用系统 Color.secondary，与勾选图标/到期标签的可配置
+  completed 色不一致；现标题同样按 `Color(boardColorHex: row.colorHex)` 着色
+  （保持划线），「已完成行划线并用 completed 色」对整行成立。
+  测试侧补充断言：已完成且无日期的行取 completed 色而非 noDate 色
+  （completed 优先级最高），行模型 colorHex 即标题渲染所用值。
+- 版本号回退：regen 曾把 pbxproj 的 MARKETING_VERSION 0.2.6→1.0.0、
+  CURRENT_PROJECT_VERSION 9→1，直接编辑恢复（未新增文件，未再 regen）。
+- 低风险项：设置页颜色网格改为 stride 切行（奇数个数不越界）；分节快照
+  每次渲染单次计算；到期格式器按（含时刻+语言）静态缓存；loadBoard 落地
+  守卫补列表/已完成偏好快照比对（仿 loadEvents 过期校验）。
+
 ## 验证
 
 - `ruby tools/generate_xcodeproj.rb` 重建工程（新增源码与测试文件纳入）。

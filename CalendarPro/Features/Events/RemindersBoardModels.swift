@@ -312,11 +312,27 @@ struct BoardSnapshot: Equatable {
 
     // MARK: - 展示辅助
 
+    /// 到期格式器缓存（键=是否含时刻+语言标识）；DateFormatter 创建开销大，按需缓存。
+    /// UI 主线程与测试均会调用，用锁保护；语言切换后键变化会新建，不依赖失效逻辑。
+    private nonisolated(unsafe) static var dueTextFormatters: [String: DateFormatter] = [:]
+    private static let dueTextFormattersLock = NSLock()
+
     /// 到期文案：带时刻用 "M月d日 HH:mm" 模板，纯日期用 "M月d日" 模板（随本地化）。
     private static func dueText(for date: Date, includesTime: Bool) -> String {
+        let locale = AppLocalization.locale
+        let key = "\(includesTime)-\(locale.identifier)"
+
+        dueTextFormattersLock.lock()
+        defer { dueTextFormattersLock.unlock() }
+
+        if let cached = dueTextFormatters[key] {
+            return cached.string(from: date)
+        }
+
         let formatter = DateFormatter()
-        formatter.locale = AppLocalization.locale
+        formatter.locale = locale
         formatter.setLocalizedDateFormatFromTemplate(includesTime ? "MdHm" : "Md")
+        dueTextFormatters[key] = formatter
         return formatter.string(from: date)
     }
 

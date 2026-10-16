@@ -29,7 +29,8 @@ struct RemindersBoardSection: View {
 
     @State private var isExpanded = false
 
-    private var snapshot: BoardSnapshot {
+    /// 看板布局快照：每次渲染仅计算一次，标题栏与展开内容共用。
+    private func makeSnapshot() -> BoardSnapshot {
         BoardSnapshot.make(
             reminders: reminders,
             now: timeRefreshCoordinator.currentDate,
@@ -50,21 +51,21 @@ struct RemindersBoardSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            header
+        let snapshot = makeSnapshot()
+
+        return VStack(alignment: .leading, spacing: 8) {
+            header(snapshot)
 
             if isExpanded {
-                boardContent
+                boardContent(snapshot)
             }
         }
     }
 
     // MARK: - 标题栏
 
-    private var header: some View {
-        let snapshot = snapshot
-
-        return Button {
+    private func header(_ snapshot: BoardSnapshot) -> some View {
+        Button {
             withAnimation(.easeInOut(duration: 0.15)) {
                 isExpanded.toggle()
             }
@@ -98,9 +99,7 @@ struct RemindersBoardSection: View {
     // MARK: - 展开内容
 
     @ViewBuilder
-    private var boardContent: some View {
-        let snapshot = snapshot
-
+    private func boardContent(_ snapshot: BoardSnapshot) -> some View {
         if snapshot.groups.isEmpty {
             Text(L("暂无提醒事项"))
                 .font(.system(size: 12))
@@ -170,7 +169,7 @@ struct RemindersBoardSection: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .strikethrough(row.isCompleted)
-                .foregroundStyle(row.isCompleted ? Color.secondary : Color.primary)
+                .foregroundStyle(row.isCompleted ? Color(boardColorHex: row.colorHex) : Color.primary)
 
             Spacer(minLength: 8)
 
