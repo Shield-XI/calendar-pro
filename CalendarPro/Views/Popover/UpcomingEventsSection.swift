@@ -134,15 +134,18 @@ struct UpcomingEventsSection: View {
     let onOpenReminder: (EKReminder) -> Void
     let onToggleReminder: (EKReminder) -> Void
 
-    // 折叠状态只记在视图内：初始展开态读「默认展开版块」设置，弹层每次
-    // 打开重新按设置取初值；会话内手动折叠即时生效，不持久化
+    // 折叠状态只记在视图内：初始展开态读「默认展开版块」设置；弹层重开
+    // 时视图实例存活（PopoverController 复用内容视图控制器），State 的
+    // 初始值只在首次创建时生效，因此在 body 的 onAppear（内容视图重新
+    // 挂载即触发）按设置重置展开态——弹层每次打开取设置初值，打开期间
+    // 手动折叠不会触发 onAppear，即时生效且不被复位，不持久化
     @State private var isExpanded: Bool
 
     /// 显式初始化器：入参由 CalendarPopoverView 透传（数据与回调来自
     /// RootPopoverView 与用户设置），defaultExpanded 来自「默认展开版块」
     /// 设置，作为折叠态的初始值。
-    /// 副作用：以 defaultExpanded 初始化 @State isExpanded，弹层视图重建时
-    /// 重新取设置初值。
+    /// 副作用：以 defaultExpanded 初始化 @State isExpanded；展开态最终
+    /// 以 body onAppear 按该值重置的结果为准（见上方状态注释）。
     init(
         items: [CalendarItem],
         isLoadingPast: Bool,
@@ -192,6 +195,12 @@ struct UpcomingEventsSection: View {
                 expandedContent(snapshot)
                     .frame(maxHeight: Metrics.expandedMaxHeight)
             }
+        }
+        // 弹层每次打开内容视图重新挂载会再次触发 onAppear，此处按当前
+        // 设置重置展开态；State(initialValue:) 仅视图首次创建时生效，
+        // 无法覆盖「重开弹层取新设置值」的场景
+        .onAppear {
+            isExpanded = defaultExpanded
         }
     }
 
