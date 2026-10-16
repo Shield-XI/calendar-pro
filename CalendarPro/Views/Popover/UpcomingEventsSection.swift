@@ -2,10 +2,10 @@ import SwiftUI
 import EventKit
 
 // 文件头：
-// 职责：弹层“未来日程”可折叠分节。UpcomingSnapshot 负责把统一的 CalendarItem
+// 职责：弹层“近期日程”可折叠分节。UpcomingSnapshot 负责把统一的 CalendarItem
 //       列表按天分组（纯函数，便于测试）；UpcomingEventsSection 负责折叠标题、
 //       天头与条目渲染及滚动到底自动加载。
-// 输入：EventService.fetchUpcomingCalendarItems 取回的未来窗口内 [CalendarItem]、
+// 输入：EventService.fetchUpcomingCalendarItems 取回的近期窗口内 [CalendarItem]、
 //       当前时间（TimeRefreshCoordinator）与分组用日历。
 // 输出：按天升序分组的快照结构 / 弹层内的分节视图。
 // 依赖：EventKit（EKEvent/EKReminder）、SwiftUI、AppLocalization（L/LF）。
@@ -82,7 +82,7 @@ struct UpcomingSnapshot {
         calendar: Calendar
     ) -> String {
         if calendar.isDate(dayStart, inSameDayAs: now) {
-            return L("Upcoming Today")
+            return L("Recent Today")
         }
 
         if let tomorrow = calendar.date(
@@ -90,7 +90,7 @@ struct UpcomingSnapshot {
             value: 1,
             to: calendar.startOfDay(for: now)
         ), calendar.isDate(dayStart, inSameDayAs: tomorrow) {
-            return L("Upcoming Tomorrow")
+            return L("Recent Tomorrow")
         }
 
         let formatter = DateFormatter()
@@ -158,7 +158,7 @@ struct UpcomingEventsSection: View {
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
 
-                Text(L("Upcoming Events"))
+                Text(L("Recent Events"))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .lineLimit(1)
 
@@ -194,7 +194,7 @@ struct UpcomingEventsSection: View {
     @ViewBuilder
     private func expandedContent(_ snapshot: UpcomingSnapshot) -> some View {
         if items.isEmpty, !isLoading {
-            Text(L("No Upcoming Events"))
+            Text(L("No Recent Events"))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)

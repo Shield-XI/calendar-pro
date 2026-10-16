@@ -304,7 +304,7 @@ final class EventService: ObservableObject {
         }
     }
     
-    /// 获取 now 起到 windowEnd 之间的未来日程（事件 + 可选的有到期时间的未完成提醒）。
+    /// 获取近期日程窗口（事件 + 可选的有到期时间的未完成提醒）。
     /// - Parameters:
     ///   - now: 窗口起点，取当前时间；当天已结束的事件会被过滤
     ///   - windowEnd: 窗口终点（now + N 天）
@@ -403,7 +403,7 @@ final class EventService: ObservableObject {
         }
     }
 
-    /// 判断事件是否纳入未来日程列表（静态纯函数，供窗口过滤与单元测试复用）。
+    /// 判断事件是否纳入近期日程列表（静态纯函数，供窗口过滤与单元测试复用）。
     /// - Parameters:
     ///   - event: 待判定事件，来自 EventKit 重叠语义窗口谓词的查询结果
     ///   - windowStart: 窗口起点（当天零点）；事件 startDate 不早于它才纳入，

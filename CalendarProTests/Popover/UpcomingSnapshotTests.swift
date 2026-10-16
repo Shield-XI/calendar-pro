@@ -4,7 +4,7 @@ import EventKit
 
 // 文件头：
 // 职责：验证 UpcomingSnapshot 的按天分组纯函数，以及 EventService 事件/提醒
-//       窗口过滤（含递归展开近似）的行为。
+//       近期窗口过滤（含递归展开近似）的行为。
 // 输入：GMT 固定日历 + DateComponents 构造的固定日期与 EventKit 夹具。
 // 输出：XCTest 断言结果。
 // 依赖：XCTest、EventKit、@testable CalendarPro。
@@ -116,7 +116,7 @@ final class UpcomingSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.totalItemCount, 0)
     }
 
-    // MARK: - EventService.reminder(isDueWithin:) 窗口过滤
+    // MARK: - EventService.reminder(isDueWithin:) 近期窗口过滤
 
     @MainActor
     func testReminderWindowFilterAcceptsDueWithinWindow() {
@@ -186,7 +186,7 @@ final class UpcomingSnapshotTests: XCTestCase {
         XCTAssertFalse(isDue)
     }
 
-    // MARK: - EventService.event(isWithinUpcomingWindow:) 窗口过滤
+    // MARK: - EventService.event(isWithinUpcomingWindow:) 近期窗口过滤
 
     @MainActor
     func testEventWindowFilterExcludesMultiDayEventStartedYesterdayEndingToday() {

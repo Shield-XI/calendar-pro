@@ -214,19 +214,19 @@ struct EventsSettingsView: View {
 
     private var upcomingSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle(L("Show Upcoming Section"), isOn: showUpcomingSectionBinding)
+            Toggle(L("Show Recent Section"), isOn: showUpcomingSectionBinding)
                 .toggleStyle(.checkbox)
 
-            Text(L("Show Upcoming Section Description"))
+            Text(L("Show Recent Section Description"))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             if store.menuBarPreferences.showUpcomingSection {
                 HStack {
-                    Text(L("Upcoming Day Limit"))
+                    Text(L("Recent Day Limit"))
                     Spacer()
-                    Picker(L("Upcoming Day Limit"), selection: upcomingDayLimitBinding) {
+                    Picker(L("Recent Day Limit"), selection: upcomingDayLimitBinding) {
                         Text(LF("%d days", 30)).tag(30)
                         Text(LF("%d days", 90)).tag(90)
                         Text(LF("%d days", 180)).tag(180)
@@ -236,7 +236,7 @@ struct EventsSettingsView: View {
                     .labelsHidden()
                 }
 
-                Toggle(L("Include Reminders in Upcoming"), isOn: upcomingIncludeRemindersBinding)
+                Toggle(L("Include Reminders in Recent"), isOn: upcomingIncludeRemindersBinding)
                     .toggleStyle(.checkbox)
 
                 upcomingCalendarSourcesSection
@@ -260,7 +260,7 @@ struct EventsSettingsView: View {
                 }
             }
         } else {
-            Text(L("Choose Calendars for Upcoming"))
+            Text(L("Choose Calendars for Recent"))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
 
@@ -309,7 +309,7 @@ struct EventsSettingsView: View {
                 }
             }
         } else {
-            Text(L("Choose Reminder Lists for Upcoming"))
+            Text(L("Choose Reminder Lists for Recent"))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
 

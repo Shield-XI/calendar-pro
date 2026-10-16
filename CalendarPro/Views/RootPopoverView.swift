@@ -72,7 +72,7 @@ struct RootPopoverView: View {
     private let almanacService = AlmanacService()
     private let weatherAutoRefreshInterval: TimeInterval = 15 * 60
 
-    /// 未来日程加载窗口的初始天数与每次滚动到底自动加载的扩幅
+    /// 近期日程加载窗口的初始天数与每次滚动到端点自动加载的扩幅
     static let initialUpcomingWindowDays = 30
     static let upcomingWindowStepDays = 30
 
@@ -483,7 +483,7 @@ struct RootPopoverView: View {
         onDismissEventDetailWindow()
     }
 
-    /// 加载未来日程窗口数据；与 loadEvents 共用授权刷新与请求竞态保护。
+    /// 加载近期日程窗口数据；与 loadEvents 共用授权刷新与请求竞态保护。
     private func loadUpcoming() {
         let preferences = settingsStore.menuBarPreferences
 

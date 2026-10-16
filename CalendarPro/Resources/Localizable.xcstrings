@@ -901,7 +901,7 @@
         }
       }
     },
-    "Choose Calendars for Upcoming" : {
+    "Choose Calendars for Recent" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -913,7 +913,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择未来日程包含的日历"
+            "value" : "选择近期日程包含的日历"
           }
         }
       }
@@ -935,7 +935,7 @@
         }
       }
     },
-    "Choose Reminder Lists for Upcoming" : {
+    "Choose Reminder Lists for Recent" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -947,7 +947,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择未来日程包含的提醒列表"
+            "value" : "选择近期日程包含的提醒列表"
           }
         }
       }
@@ -2417,13 +2417,13 @@
         }
       }
     },
-    "Include Reminders in Upcoming" : {
+    "Include Reminders in Recent" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Include Reminders in Upcoming"
+            "value" : "Include Reminders in Recent"
           }
         },
         "zh-Hans" : {
@@ -3607,19 +3607,19 @@
         }
       }
     },
-    "No Upcoming Events" : {
+    "No Recent Events" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No upcoming events"
+            "value" : "No recent events"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未来暂无日程"
+            "value" : "暂无近期日程"
           }
         }
       }
@@ -5120,36 +5120,36 @@
         }
       }
     },
-    "Show Upcoming Section" : {
+    "Show Recent Section" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Upcoming Section"
+            "value" : "Show Recent Section"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示未来日程版块"
+            "value" : "显示近期日程版块"
           }
         }
       }
     },
-    "Show Upcoming Section Description" : {
+    "Show Recent Section Description" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show a collapsible section below the event list that lists upcoming events."
+            "value" : "Show a collapsible section below the event list that lists recent events."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在日程列表下方显示可折叠的未来日程版块。"
+            "value" : "在日程列表下方显示可折叠的近期日程版块。"
           }
         }
       }
@@ -5953,13 +5953,13 @@
         }
       }
     },
-    "Upcoming Day Limit" : {
+    "Recent Day Limit" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Upcoming Day Limit"
+            "value" : "Recent Day Limit"
           }
         },
         "zh-Hans" : {
@@ -5970,24 +5970,24 @@
         }
       }
     },
-    "Upcoming Events" : {
+    "Recent Events" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Upcoming"
+            "value" : "Recent"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未来日程"
+            "value" : "近期日程"
           }
         }
       }
     },
-    "Upcoming Today" : {
+    "Recent Today" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6004,7 +6004,7 @@
         }
       }
     },
-    "Upcoming Tomorrow" : {
+    "Recent Tomorrow" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
