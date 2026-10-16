@@ -175,6 +175,11 @@ struct MenuBarPreferences: Codable, Equatable {
     var qWeatherAPIKey: String = ""
     var showUpcomingIndicator: Bool
     var upcomingReminderMinutes: Int
+    var showUpcomingSection: Bool
+    var upcomingDayLimit: Int
+    var upcomingIncludeReminders: Bool
+    var upcomingEnabledCalendarIDs: [String]
+    var upcomingEnabledReminderCalendarIDs: [String]
 
     var requiresSecondRefresh: Bool {
         tokens.contains { $0.token == .time && $0.isEnabled && $0.style == .full }
@@ -257,7 +262,12 @@ struct MenuBarPreferences: Codable, Equatable {
             qWeatherAPIHost: "",
             qWeatherAPIKey: "",
             showUpcomingIndicator: true,
-            upcomingReminderMinutes: 15
+            upcomingReminderMinutes: 15,
+            showUpcomingSection: true,
+            upcomingDayLimit: 90,
+            upcomingIncludeReminders: false,
+            upcomingEnabledCalendarIDs: [],
+            upcomingEnabledReminderCalendarIDs: []
         )
     }
 
@@ -287,7 +297,12 @@ struct MenuBarPreferences: Codable, Equatable {
         qWeatherAPIHost: "",
         qWeatherAPIKey: "",
         showUpcomingIndicator: true,
-        upcomingReminderMinutes: 15
+        upcomingReminderMinutes: 15,
+        showUpcomingSection: true,
+        upcomingDayLimit: 90,
+        upcomingIncludeReminders: false,
+        upcomingEnabledCalendarIDs: [],
+        upcomingEnabledReminderCalendarIDs: []
     )
 }
 
@@ -315,6 +330,11 @@ extension MenuBarPreferences {
         case qWeatherAPIKey
         case showUpcomingIndicator
         case upcomingReminderMinutes
+        case showUpcomingSection
+        case upcomingDayLimit
+        case upcomingIncludeReminders
+        case upcomingEnabledCalendarIDs
+        case upcomingEnabledReminderCalendarIDs
     }
 
     init(from decoder: Decoder) throws {
@@ -344,7 +364,12 @@ extension MenuBarPreferences {
             qWeatherAPIHost: try container.decodeIfPresent(String.self, forKey: .qWeatherAPIHost) ?? "",
             qWeatherAPIKey: try container.decodeIfPresent(String.self, forKey: .qWeatherAPIKey) ?? "",
             showUpcomingIndicator: try container.decodeIfPresent(Bool.self, forKey: .showUpcomingIndicator) ?? true,
-            upcomingReminderMinutes: try container.decodeIfPresent(Int.self, forKey: .upcomingReminderMinutes) ?? 15
+            upcomingReminderMinutes: try container.decodeIfPresent(Int.self, forKey: .upcomingReminderMinutes) ?? 15,
+            showUpcomingSection: try container.decodeIfPresent(Bool.self, forKey: .showUpcomingSection) ?? true,
+            upcomingDayLimit: try container.decodeIfPresent(Int.self, forKey: .upcomingDayLimit) ?? 90,
+            upcomingIncludeReminders: try container.decodeIfPresent(Bool.self, forKey: .upcomingIncludeReminders) ?? false,
+            upcomingEnabledCalendarIDs: try container.decodeIfPresent([String].self, forKey: .upcomingEnabledCalendarIDs) ?? [],
+            upcomingEnabledReminderCalendarIDs: try container.decodeIfPresent([String].self, forKey: .upcomingEnabledReminderCalendarIDs) ?? []
         )
     }
 
@@ -392,5 +417,10 @@ extension MenuBarPreferences {
         try container.encode(qWeatherAPIKey, forKey: .qWeatherAPIKey)
         try container.encode(showUpcomingIndicator, forKey: .showUpcomingIndicator)
         try container.encode(upcomingReminderMinutes, forKey: .upcomingReminderMinutes)
+        try container.encode(showUpcomingSection, forKey: .showUpcomingSection)
+        try container.encode(upcomingDayLimit, forKey: .upcomingDayLimit)
+        try container.encode(upcomingIncludeReminders, forKey: .upcomingIncludeReminders)
+        try container.encode(upcomingEnabledCalendarIDs, forKey: .upcomingEnabledCalendarIDs)
+        try container.encode(upcomingEnabledReminderCalendarIDs, forKey: .upcomingEnabledReminderCalendarIDs)
     }
 }
