@@ -261,6 +261,65 @@ final class EventService: ObservableObject {
         return result
     }
     
+    func fetchBoardReminders(
+        enabledCalendarIDs: [String],
+        includeCompleted: Bool
+    ) async -> [EKReminder] {
+        guard remindersAuthorized else { return [] }
+
+        let calendarsToFetch: [EKCalendar]
+        if enabledCalendarIDs.isEmpty {
+            calendarsToFetch = reminderCalendars
+        } else {
+            calendarsToFetch = reminderCalendars.filter { enabledCalendarIDs.contains($0.calendarIdentifier) }
+        }
+
+        guard !calendarsToFetch.isEmpty else { return [] }
+
+        let store = eventStore
+
+        // 不限日期取全部未完成提醒：起始与结束都传 nil，
+        // 与 fetchReminders 双查询思路一致，但看板需要全量而非单日窗口。
+        let incompletePredicate = eventStore.predicateForIncompleteReminders(
+            withDueDateStarting: nil,
+            ending: nil,
+            calendars: calendarsToFetch
+        )
+
+        async let incompleteResult = withCheckedContinuation { (continuation: CheckedContinuation<[EKReminder], Never>) in
+            store.fetchReminders(matching: incompletePredicate) { reminders in
+                continuation.resume(returning: reminders ?? [])
+            }
+        }
+
+        let incomplete = await incompleteResult
+
+        guard includeCompleted else { return incomplete }
+
+        // 需要已完成提醒时再发起完成态查询，并按唯一标识去重合并。
+        let completedPredicate = eventStore.predicateForCompletedReminders(
+            withCompletionDateStarting: nil,
+            ending: nil,
+            calendars: calendarsToFetch
+        )
+
+        let completed = await withCheckedContinuation { (continuation: CheckedContinuation<[EKReminder], Never>) in
+            store.fetchReminders(matching: completedPredicate) { reminders in
+                continuation.resume(returning: reminders ?? [])
+            }
+        }
+
+        var seen = Set<String>()
+        var result: [EKReminder] = []
+        for reminder in incomplete + completed {
+            if seen.insert(reminder.calendarItemIdentifier).inserted {
+                result.append(reminder)
+            }
+        }
+
+        return result
+    }
+
     func fetchCalendarItems(
         for date: Date,
         enabledCalendarIDs: [String],

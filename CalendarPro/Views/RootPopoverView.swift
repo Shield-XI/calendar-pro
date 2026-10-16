@@ -51,6 +51,7 @@ struct RootPopoverView: View {
 
     @State private var itemsForSelectedDate: [CalendarItem] = []
     @State private var isLoadingEvents: Bool = false
+    @State private var boardReminders: [EKReminder] = []
     @State private var almanacDescriptor: AlmanacDescriptor?
     @State private var weatherDescriptor: WeatherDescriptor?
     @State private var isLoadingWeather: Bool = false
@@ -75,6 +76,7 @@ struct RootPopoverView: View {
                 eventService.checkAuthorizationStatus()
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
                 refreshInfoStrips()
+                loadBoard()
             }
             .onReceive(eventService.$isAuthorized.dropFirst()) { _ in
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
@@ -84,13 +86,16 @@ struct RootPopoverView: View {
                     eventService.fetchReminderCalendars()
                 }
                 refreshEventsForCurrentSelection()
+                loadBoard()
             }
             .onReceive(settingsStore.$menuBarPreferences.dropFirst()) { _ in
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
                 refreshInfoStrips()
+                loadBoard()
             }
             .onReceive(eventService.$storeChangeRevision.dropFirst()) { _ in
                 refreshEventsForCurrentSelection()
+                loadBoard()
             }
             .onReceive(viewModel.$selectedDate.dropFirst()) { newDate in
                 if let date = newDate {
@@ -108,6 +113,8 @@ struct RootPopoverView: View {
                 viewModel.syncCurrentDaySelectionIfNeeded(calendar: displayCalendar)
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
                 refreshInfoStrips()
+                // 跨天后逾期/时间分段颜色与到期文案需要重算。
+                loadBoard()
             }
             .onDisappear {
                 cancelWeatherLoad()
@@ -151,6 +158,12 @@ struct RootPopoverView: View {
             showVacationGuideButton: showVacationGuideButton,
             isVacationGuideEnabled: isVacationGuideEnabled,
             vacationGuideDisabledReason: vacationGuideDisabledReason,
+            showRemindersBoard: settingsStore.menuBarPreferences.showRemindersBoard,
+            boardReminders: boardReminders,
+            boardGroupingMode: settingsStore.menuBarPreferences.boardGroupingMode,
+            boardColorMode: settingsStore.menuBarPreferences.boardColorMode,
+            boardColorPreferences: settingsStore.menuBarPreferences.boardColorPreferences,
+            boardShowCompleted: settingsStore.menuBarPreferences.boardShowCompleted,
             canCreateEvent: canCreateEvent,
             canCreateReminder: canCreateReminder,
             onPreviousMonth: {
@@ -498,8 +511,34 @@ struct RootPopoverView: View {
         do {
             try eventService.toggleReminderCompletion(reminder)
             refreshEventsForCurrentSelection()
+            // 看板行与事件列表共用该勾选入口，完成后同步刷新看板计数与状态。
+            loadBoard()
         } catch {
             print("Failed to toggle reminder completion: \(error)")
+        }
+    }
+
+    /// 拉取看板提醒数据；关闭看板或未授权时清空。
+    /// 仿 loadEvents 模式：取数前快照偏好，落地前按当前开关校验，避免过期数据回写。
+    private func loadBoard() {
+        let preferences = settingsStore.menuBarPreferences
+
+        guard preferences.showRemindersBoard, eventService.remindersAuthorized else {
+            boardReminders = []
+            return
+        }
+
+        let enabledCalendarIDs = preferences.boardEnabledReminderCalendarIDs
+        let includeCompleted = preferences.boardShowCompleted
+        Task {
+            let reminders = await eventService.fetchBoardReminders(
+                enabledCalendarIDs: enabledCalendarIDs,
+                includeCompleted: includeCompleted
+            )
+            await MainActor.run {
+                guard settingsStore.menuBarPreferences.showRemindersBoard else { return }
+                boardReminders = reminders
+            }
         }
     }
 

@@ -405,6 +405,91 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
+    /// 设置是否在弹层中显示提醒事项看板分节。
+    func setShowRemindersBoard(_ enabled: Bool) {
+        var prefs = menuBarPreferences
+        prefs.showRemindersBoard = enabled
+        menuBarPreferences = prefs
+        persistMenuBarPreferences()
+    }
+
+    /// 设置看板启用的提醒列表；归一语义与 setReminderCalendarEnabled 一致（空数组=全选）。
+    func setBoardReminderCalendarEnabled(
+        _ enabled: Bool,
+        calendarID: String,
+        allCalendarIDs: [String] = []
+    ) {
+        let hasAllCalendarIDs = !allCalendarIDs.isEmpty
+        var ids = menuBarPreferences.boardEnabledReminderCalendarIDs
+
+        if hasAllCalendarIDs && ids.isEmpty {
+            ids = allCalendarIDs
+        }
+
+        if enabled {
+            if !ids.contains(calendarID) {
+                ids.append(calendarID)
+            }
+        } else {
+            ids.removeAll { $0 == calendarID }
+        }
+
+        var prefs = menuBarPreferences
+        if hasAllCalendarIDs && Set(ids) == Set(allCalendarIDs) {
+            prefs.boardEnabledReminderCalendarIDs = []
+        } else if hasAllCalendarIDs {
+            prefs.boardEnabledReminderCalendarIDs = allCalendarIDs.filter { ids.contains($0) }
+        } else {
+            prefs.boardEnabledReminderCalendarIDs = ids
+        }
+        menuBarPreferences = prefs
+        persistMenuBarPreferences()
+    }
+
+    /// 设置看板分组模式（按列表或按优先级）。
+    func setBoardGroupingMode(_ mode: RemindersBoardGroupingMode) {
+        var prefs = menuBarPreferences
+        prefs.boardGroupingMode = mode
+        menuBarPreferences = prefs
+        persistMenuBarPreferences()
+    }
+
+    /// 设置看板是否显示已完成提醒。
+    func setBoardShowCompleted(_ enabled: Bool) {
+        var prefs = menuBarPreferences
+        prefs.boardShowCompleted = enabled
+        menuBarPreferences = prefs
+        persistMenuBarPreferences()
+    }
+
+    /// 设置看板颜色模式（逾期双色或时间分段）。
+    func setBoardColorMode(_ mode: RemindersBoardColorMode) {
+        var prefs = menuBarPreferences
+        prefs.boardColorMode = mode
+        menuBarPreferences = prefs
+        persistMenuBarPreferences()
+    }
+
+    /// 套用配色预设：经典/暖色/冷色/高对比度会整体覆盖颜色，custom 仅改标记保留现值。
+    func setBoardColorPreset(_ preset: BoardColorPreset) {
+        var prefs = menuBarPreferences
+        prefs.boardColorPreset = preset
+        if let palette = preset.colorPreferences {
+            prefs.boardColorPreferences = palette
+        }
+        menuBarPreferences = prefs
+        persistMenuBarPreferences()
+    }
+
+    /// 逐色修改看板颜色：任意一色被改动后预设自动转为 custom，已改值持久化。
+    func setBoardColorHex(_ colorHex: String, for key: BoardColorKey) {
+        var prefs = menuBarPreferences
+        prefs.boardColorPreferences.setColorHex(colorHex, for: key)
+        prefs.boardColorPreset = .custom
+        menuBarPreferences = prefs
+        persistMenuBarPreferences()
+    }
+
     func setLaunchAtLoginEnabled(_ enabled: Bool) {
         launchAtLoginStatusMessage = nil
 

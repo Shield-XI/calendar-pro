@@ -1,0 +1,74 @@
+# 提醒事项看板实现记录
+
+- 日期：2026-10-16
+- 对应设计：`2026-10-16-reminders-board-design.md`
+- 状态：已实现，构建与测试通过后补充验证细节
+
+## 变更清单
+
+新增：
+- `CalendarPro/Settings/BoardColorPreferences.swift`：颜色偏好结构（12 色 hex）、
+  颜色键枚举、预设枚举与四套预设配色。
+- `CalendarPro/Features/Events/RemindersBoardModels.swift`：分组/颜色模式枚举、
+  优先级映射、时间桶解析、`BoardSnapshot` 纯函数布局、hex 颜色互转。
+- `CalendarPro/Views/Popover/RemindersBoardSection.swift`：可折叠分节视图。
+- `CalendarProTests/Popover/BoardSnapshotTests.swift`：看板纯函数布局测试。
+
+修改：
+- `CalendarPro/Settings/MenuBarPreferences.swift`：新增 7 个看板字段
+  （showRemindersBoard、boardEnabledReminderCalendarIDs、boardGroupingMode、
+  boardShowCompleted、boardColorMode、boardColorPreferences、boardColorPreset），
+  CodingKeys/decode（旧数据补默认）/encode 同步。
+- `CalendarPro/Settings/SettingsStore.swift`：新增看板 setter（含列表勾选归一、
+  预设套用、逐色转 custom）。
+- `CalendarPro/Features/Events/EventService.swift`：新增
+  `fetchBoardReminders(enabledCalendarIDs:includeCompleted:)`。
+- `CalendarPro/Views/Popover/CalendarPopoverView.swift`：新增看板 props 与
+  `remindersBoardSection`（插在日程分节之后）。
+- `CalendarPro/Views/RootPopoverView.swift`：`@State boardReminders` + `loadBoard()`，
+  挂接 onAppear / 提醒授权 / 偏好 / storeChangeRevision / 跨天刷新与勾选联动。
+- `CalendarPro/Views/Settings/EventsSettingsView.swift`：新增「提醒看板」GroupBox
+  （开关、列表勾选、分组模式、显示已完成、颜色模式、预设 Picker、颜色网格）。
+- `CalendarPro/Resources/Localizable.xcstrings`：36 条中文 key 补 en 翻译。
+- `CalendarProTests/Settings/SettingsStoreTests.swift`：看板字段持久化往返、
+  列表勾选归一、旧版数据解码补默认等 6 个用例。
+
+## 关键实现决策
+
+1. `BoardSnapshot.make` 比委派签名多 `colorMode` / `colorPreferences` 两个入参：
+   行着色属于布局产出（需求第 4 条），收入快照才能整体单测。
+2. 行模型为纯值 `RemindersBoardRow`，不持有 `EKReminder`；勾选交互在
+   `RemindersBoardSection` 内按 `calendarItemIdentifier` 反查后转发既有回调，
+   不改动现有 eventsSection 行为。
+3. 时间桶按日级比较（自然日零点），`today+7 天` 零点为 thisWeek 上界（不含第 8 天）。
+4. 已完成查询仅在 `boardShowCompleted` 开启时发起，降低大历史库拉取成本。
+5. `MenuBarPreferences` 新字段全部带属性默认值并走 `decodeIfPresent`，
+   旧版持久化数据无需迁移。
+6. 颜色以 `#RRGGBB` hex 存取：`NSColor→hex`（sRGB 归一）用于行模型与测试断言，
+   `hex→Color` 扩展供 SwiftUI 渲染，解析失败回退中性灰。
+7. 优先级映射独立为 `ReminderBoardPriority(ekPriority:)` 纯函数；
+   既有 `ReminderDetailWindowView` 的旧映射（1-4/5/6-9）不在本次范围内，未改动。
+
+## 预设配色取值表
+
+| 键 | classic | warm | cool | highContrast |
+| --- | --- | --- | --- | --- |
+| overdue 逾期 | #DC2626 | #B91C1C | #DB2777 | #D70015 |
+| notOverdue 未逾期 | #2563EB | #D97706 | #0284C7 | #0040DD |
+| past 过去 | #DC2626 | #B91C1C | #DB2777 | #D70015 |
+| today 今天 | #EA580C | #EA580C | #0891B2 | #C93400 |
+| thisWeek 本周 | #2563EB | #CA8A04 | #2563EB | #0040DD |
+| later 更晚 | #64748B | #78716C | #7C3AED | #5E5CE6 |
+| noDate 无日期 | #9CA3AF | #A8A29E | #94A3B8 | #8E8E93 |
+| priorityHigh 高优先级 | #DC2626 | #B91C1C | #DB2777 | #D70015 |
+| priorityMedium 中优先级 | #EA580C | #EA580C | #0891B2 | #C93400 |
+| priorityLow 低优先级 | #2563EB | #CA8A04 | #2563EB | #0040DD |
+| priorityNone 无优先级 | #9CA3AF | #A8A29E | #94A3B8 | #8E8E93 |
+| completed 已完成 | #9CA3AF | #A8A29E | #94A3B8 | #8E8E93 |
+
+## 验证
+
+- `ruby tools/generate_xcodeproj.rb` 重建工程（新增源码与测试文件纳入）。
+- `xcodebuild test -project CalendarPro.xcodeproj -scheme CalendarPro
+  -destination 'platform=macOS' -derivedDataPath .dd` 全量通过
+  （统计见提交记录与最终报告）。
