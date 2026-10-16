@@ -907,7 +907,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose Calendars for Upcoming"
+            "value" : "Choose Calendars for Recent Events"
           }
         },
         "zh-Hans" : {
@@ -941,7 +941,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose Reminder Lists for Upcoming"
+            "value" : "Choose Reminder Lists for Recent Events"
           }
         },
         "zh-Hans" : {
