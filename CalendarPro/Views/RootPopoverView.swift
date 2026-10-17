@@ -54,19 +54,15 @@ struct RootPopoverView: View {
     @State private var upcomingItems: [CalendarItem] = []
     @State private var isLoadingUpcomingPast: Bool = false
     @State private var isLoadingUpcomingFuture: Bool = false
-    // 双向窗口端点：过去端点=今天零点向上游回溯 upcomingPastDays 天；
-    // 未来端点=now 向下游扩展 upcomingFutureDays 天。@State 随弹层视图实例
-    // 存活，用户已扩展的端点在弹层重开时保留，只重取数据不重置窗口
-    @State private var upcomingPastDays: Int = 0
-    @State private var upcomingFutureDays: Int = RootPopoverView.initialUpcomingWindowDays
-    // 过去端达界标记：向过去扩窗带不回任何条目时置位，隐藏顶部哨兵；
-    // 数据源或跨天变化可能带来更早的历史，相关触发点会复位该标记
-    @State private var isUpcomingPastExhausted: Bool = false
-    // 未来端达界标记：向未来扩窗带不回任何落在新扩展区间内的条目时置位，
-    // 隐藏底部哨兵，与过去端对称；复位时机与过去端完全一致（数据源/设置
-    // 变更与跨天）。已知取舍：未来端存在超过一个扩窗步幅（30 天）空档的
-    // 事件时会提前停止加载，仅 dayLimit=0 无限制模式受影响
-    @State private var isUpcomingFutureExhausted: Bool = false
+    // 条数分页游标：下一页查询窗的边界锚点。未来游标=下一窗起点（从
+    // 今天零点向上推进）；过去游标=下一窗上界（从今天零点向下推进）；
+    // nil=该方向已探明尽头（设置上限/空窗/循环保护）。弹层每次打开由
+    // 分节 onAppear 触发重置回第一页，不再跨打开保留窗口端点
+    @State private var upcomingFutureCursor: Date?
+    @State private var upcomingPastCursor: Date?
+    // 分页重置代数：每次重置分页递增，「近期日程」分节据此把滚动位置
+    // 显式拉回列表顶（数据重置后滚动偏移会残留）
+    @State private var upcomingResetGeneration: Int = 0
     @State private var upcomingRequestID = UUID()
     @State private var almanacDescriptor: AlmanacDescriptor?
     @State private var weatherDescriptor: WeatherDescriptor?
@@ -85,25 +81,112 @@ struct RootPopoverView: View {
     private let almanacService = AlmanacService()
     private let weatherAutoRefreshInterval: TimeInterval = 15 * 60
 
-    /// 近期日程双向窗口的初始天数与每次滚动到端点自动加载的扩幅：
-    /// 初始窗口为 [今天零点, now + 30 天]；上滚向过去扩 30 天（无天数硬
-    /// 上限，探明历史起点即止），下滚向未来扩 30 天（受设置上限约束，
-    /// 探明未来终点即止）
-    static let initialUpcomingWindowDays = 30
-    static let upcomingWindowStepDays = 30
+    /// 近期日程条数分页参数：每页条数、单窗查询跨度与单页窗口循环上限。
+    /// 第一页从当天零点开始取 10 条（含今天全天事件），过去方向初始 0 条；
+    /// 未来页从游标起按 30 天窗循环查询凑满一页或触达设置上限，过去页
+    /// 对称（无下限，空窗即尽头）。
+    static let upcomingPageSize = 10
+    static let upcomingPageWindowDays = 30
+    static let upcomingPageMaxWindows = 12
 
-    /// 未来端扩窗是否已探明终点（纯函数，便于单测）：本次扩窗带不回任何
-    /// 开始日期落在新扩展区间 [previousFutureEnd, newFutureEnd) 内的条目
-    /// 时为 true，与过去端「带不回更早条目即历史起点」的判定对称。
-    /// 无开始日期的条目无法落入区间，不参与判定。
-    static func isUpcomingFutureWindowExhausted(
-        items: [CalendarItem],
-        previousFutureEnd: Date,
-        newFutureEnd: Date
-    ) -> Bool {
-        !items.contains { item in
+    /// 近期日程分页方向：未来页从游标向下游推进，过去页对称向上。
+    enum UpcomingPageDirection {
+        case past
+        case future
+    }
+
+    /// 单窗分页切片结果（纯数据，便于单测断言）。
+    struct UpcomingPageWindowSlice {
+        // 本窗新取条目：已剔除已加载身份，统一升序存放（展示排序由
+        // UpcomingSnapshot 负责）
+        let takenItems: [CalendarItem]
+        // 本窗查询结果中落入窗内的条目总数（去重前，供过去端空窗判定：
+        // 全部重复只说明递归提醒跨窗重复返回，不代表历史尽头）
+        let inRangeItemCount: Int
+        // 本窗取完后本页是否已凑满页大小
+        let isPageFull: Bool
+    }
+
+    /// 分页切片与游标推进（纯静态函数，便于单测）：输入一个 EventKit
+    /// 窗口查询结果（条目序列）与当前游标上下文，输出本窗取走的条目、
+    /// 下一窗游标与是否尽头。窗口为半开区间 [windowStart, windowEnd)，
+    /// 与 fetchUpcomingCalendarItems 的谓词与过滤语义一致。
+    /// - Parameters:
+    ///   - direction: 分页方向（未来/过去）
+    ///   - windowItems: 本窗查询返回条目（EventService 已按开始时间升序）
+    ///   - windowStart/windowEnd: 本窗半开区间两端，来自调用方循环裁剪
+    ///   - collectedCount: 本页已凑条数
+    ///   - loadedIdentifiers: 已加载条目身份集合（selectionIdentifier）；
+    ///     页界同刻条目与页满后的同窗复查都靠它去重，保证不重不漏
+    ///   - pageSize: 页大小
+    ///   - futureLimitEnd: 未来方向的时间上限（设置换算的绝对日期），
+    ///     nil 表示不限制；过去方向无下限，不使用该参数
+    ///   - isResumingWindow: 本窗是否为页满中断后的同窗复查；复查窗零
+    ///     新条目只代表窗口耗尽，不算过去端尽头
+    /// - Returns: 本窗切片、下一窗游标（nil=尽头）、是否已探明尽头
+    /// - Note: 页满时游标停在当前窗起点，下一页复查同一窗并用身份去重
+    ///   续接页界（等价于「页游标=已取条目极值之后」，且同刻条目可跨页
+    ///   不重不漏）；窗口耗尽未凑满时未来游标推进到窗尾（触达上限即
+    ///   尽头，空窗不算），过去游标推进到窗头（空窗即尽头）。
+    /// - Note: 纯函数无隔离依赖，显式 nonisolated 供非主线程上下文与
+    ///   单测直接调用。
+    nonisolated static func advanceUpcomingPage(
+        direction: UpcomingPageDirection,
+        windowItems: [CalendarItem],
+        windowStart: Date,
+        windowEnd: Date,
+        collectedCount: Int,
+        loadedIdentifiers: Set<String>,
+        pageSize: Int,
+        futureLimitEnd: Date?,
+        isResumingWindow: Bool
+    ) -> (slice: UpcomingPageWindowSlice, nextWindowStart: Date?, isExhausted: Bool) {
+        // 区间过滤 + 剔除已加载身份：切片自防护一次区间语义，复查与
+        // 同刻页界靠身份集合去重
+        let inRangeItems = windowItems.filter { item in
             guard let startDate = item.startDate else { return false }
-            return startDate >= previousFutureEnd && startDate < newFutureEnd
+            return startDate >= windowStart && startDate < windowEnd
+        }
+        let freshItems = inRangeItems.filter {
+            !loadedIdentifiers.contains($0.selectionIdentifier)
+        }
+        let remaining = pageSize - collectedCount
+        let takeCount = max(0, min(remaining, freshItems.count))
+        // 未来向取最早的一批（升序头部）；过去向取离游标最近的一批
+        // （升序尾段，即开始时间最大者），两向输出均保持升序存放
+        let taken: [CalendarItem]
+        switch direction {
+        case .future:
+            taken = Array(freshItems.prefix(takeCount))
+        case .past:
+            taken = Array(freshItems.suffix(takeCount))
+        }
+        let slice = UpcomingPageWindowSlice(
+            takenItems: taken,
+            inRangeItemCount: inRangeItems.count,
+            isPageFull: collectedCount + taken.count >= pageSize
+        )
+
+        // 页满：游标停在当前窗起点，下一页复查同一窗续接页界
+        if slice.isPageFull {
+            return (slice, windowStart, false)
+        }
+
+        switch direction {
+        case .future:
+            // 未来游标推进到窗尾；触达设置上限即尽头（空窗不算尽头，
+            // 继续向更远的窗推进，由单页窗口循环上限兜底）
+            if let futureLimitEnd, windowEnd >= futureLimitEnd {
+                return (slice, nil, true)
+            }
+            return (slice, windowEnd, false)
+        case .past:
+            // 过去端空窗即尽头（沿用「带不回条目即历史起点」启发式）；
+            // 复查窗或仅有递归提醒重复的窗推进游标继续
+            if inRangeItems.isEmpty, !isResumingWindow {
+                return (slice, nil, true)
+            }
+            return (slice, windowStart, false)
         }
     }
 
@@ -113,36 +196,29 @@ struct RootPopoverView: View {
                 timeRefreshCoordinator.refreshNow()
                 eventService.checkAuthorizationStatus()
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
-                loadUpcoming()
+                // 近期日程的首载由「近期日程」分节 onAppear 触发（内容视图
+                // 重挂载即触发），那里同时负责重置分页与回滚滚动位置
                 refreshInfoStrips()
             }
             .onReceive(eventService.$isAuthorized.dropFirst()) { _ in
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
-                isUpcomingPastExhausted = false
-                isUpcomingFutureExhausted = false
-                loadUpcoming()
+                resetUpcomingPaginationAndLoadFirstPage()
             }
             .onReceive(eventService.$remindersAuthorized.dropFirst()) { isAuthorized in
                 if isAuthorized {
                     eventService.fetchReminderCalendars()
                 }
                 refreshEventsForCurrentSelection()
-                isUpcomingPastExhausted = false
-                isUpcomingFutureExhausted = false
-                loadUpcoming()
+                resetUpcomingPaginationAndLoadFirstPage()
             }
             .onReceive(settingsStore.$menuBarPreferences.dropFirst()) { _ in
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
-                isUpcomingPastExhausted = false
-                isUpcomingFutureExhausted = false
-                loadUpcoming()
+                resetUpcomingPaginationAndLoadFirstPage()
                 refreshInfoStrips()
             }
             .onReceive(eventService.$storeChangeRevision.dropFirst()) { _ in
                 refreshEventsForCurrentSelection()
-                isUpcomingPastExhausted = false
-                isUpcomingFutureExhausted = false
-                loadUpcoming()
+                resetUpcomingPaginationAndLoadFirstPage()
             }
             .onReceive(viewModel.$selectedDate.dropFirst()) { newDate in
                 if let date = newDate {
@@ -151,7 +227,7 @@ struct RootPopoverView: View {
                 } else {
                     clearLoadedEvents()
                 }
-                loadUpcoming()
+                // 近期日程内容与选中日期无关，分页状态不随选日变化重置
             }
             .onReceive(timeRefreshCoordinator.$currentDate) { currentDate in
                 guard shouldAutoRefreshWeather(at: currentDate) else { return }
@@ -160,10 +236,8 @@ struct RootPopoverView: View {
             .onReceive(timeRefreshCoordinator.$dayChangeRevision.dropFirst()) { _ in
                 viewModel.syncCurrentDaySelectionIfNeeded(calendar: displayCalendar)
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
-                // 跨天后窗口基准（今天零点）前移，重置两端达界标记
-                isUpcomingPastExhausted = false
-                isUpcomingFutureExhausted = false
-                loadUpcoming()
+                // 跨天后分页基准（今天零点）前移，回到第一页重新开始
+                resetUpcomingPaginationAndLoadFirstPage()
                 refreshInfoStrips()
             }
             .onDisappear {
@@ -194,11 +268,10 @@ struct RootPopoverView: View {
             upcomingItems: upcomingItems,
             isLoadingUpcomingPast: isLoadingUpcomingPast,
             isLoadingUpcomingFuture: isLoadingUpcomingFuture,
-            upcomingWindowDays: upcomingFutureDays,
-            upcomingDayLimit: settingsStore.menuBarPreferences.upcomingDayLimit,
-            hasMoreUpcomingPast: !isUpcomingPastExhausted,
-            hasMoreUpcomingFuture: !isUpcomingFutureExhausted,
+            hasMoreUpcomingPast: upcomingPastCursor != nil,
+            hasMoreUpcomingFuture: upcomingFutureCursor != nil,
             upcomingDefaultExpanded: settingsStore.menuBarPreferences.upcomingDefaultExpanded,
+            upcomingResetGeneration: upcomingResetGeneration,
             selectedDate: viewModel.selectedDate,
             items: itemsForSelectedDate,
             selectedEventIdentifier: viewModel.selectedEventIdentifier,
@@ -256,6 +329,7 @@ struct RootPopoverView: View {
             onCreateEventAt: { timeRange in
                 handleCreateItem(initialTimeRange: timeRange)
             },
+            onResetUpcomingPagination: resetUpcomingPaginationAndLoadFirstPage,
             onLoadMoreUpcomingPast: handleLoadMoreUpcomingPast,
             onLoadMoreUpcomingFuture: handleLoadMoreUpcomingFuture,
             onOpenWeatherDetails: handleOpenWeatherDetails,
@@ -530,20 +604,13 @@ struct RootPopoverView: View {
         onDismissEventDetailWindow()
     }
 
-    /// 加载近期日程窗口数据；与 loadEvents 共用授权刷新与请求竞态保护。
-    /// - Parameters:
-    ///   - pastExtensionBoundary: 本次加载由「向过去扩窗」触发时传扩窗前的
-    ///     窗口起点；结果在该边界之前没有任何条目时视为已探明历史起点，
-    ///     停止继续向过去扩窗。其余触发的重取传 nil（保留既有达界标记，
-    ///     避免弹层重开就重新向过去全量扩窗）。
-    ///   - futureExtensionBoundary: 本次加载由「向未来扩窗」触发时传扩窗前
-    ///     的窗口终点；结果在该边界到新窗口终点之间没有任何条目时视为已
-    ///     探明未来终点，停止继续向未来扩窗（dayLimit=0 时哨兵否则会无限
-    ///     循环触发）。其余触发的重取传 nil，语义与过去端对称。
-    private func loadUpcoming(
-        pastExtensionBoundary: Date? = nil,
-        futureExtensionBoundary: Date? = nil
-    ) {
+    /// 重置分页状态并加载第一页：清空已加载条目、两端游标回到当天零点、
+    /// 递增重置代数（分节据此把滚动位置拉回列表顶），然后从当天开始
+    /// （含今天全天）加载未来方向第一页 10 条；过去方向初始 0 条，仅
+    /// 下拉过拉时加载。弹层每次打开由分节 onAppear 触发；授权/提醒授权/
+    /// 设置/store 变更与跨天的重取也统一走本方法（数据源变化后从第一页
+    /// 重新开始，语义可预期，推翻此前「窗口端点跨打开保留」的模型）。
+    private func resetUpcomingPaginationAndLoadFirstPage() {
         let preferences = settingsStore.menuBarPreferences
 
         guard preferences.showUpcomingSection else {
@@ -559,110 +626,160 @@ struct RootPopoverView: View {
             eventService.fetchReminderCalendars()
         }
 
-        // 设置的上限缩小时收敛未来端点；上限 0 表示不限制
-        if preferences.upcomingDayLimit > 0 {
-            upcomingFutureDays = min(upcomingFutureDays, preferences.upcomingDayLimit)
-        }
+        // 重置先于首载：旧请求结果由请求 ID 竞态守卫丢弃
+        upcomingRequestID = UUID()
+        upcomingItems = []
+        isLoadingUpcomingPast = false
+        isLoadingUpcomingFuture = false
+        upcomingFutureCursor = displayCalendar.startOfDay(
+            for: timeRefreshCoordinator.currentDate
+        )
+        upcomingPastCursor = displayCalendar.startOfDay(
+            for: timeRefreshCoordinator.currentDate
+        )
+        upcomingResetGeneration += 1
+        loadUpcomingPage(direction: .future)
+    }
 
-        let now = timeRefreshCoordinator.currentDate
-        guard let pastStart = upcomingPastStart(from: now),
-              let futureEnd = displayCalendar.date(
-                  byAdding: .day,
-                  value: upcomingFutureDays,
-                  to: now
-              ) else {
+    /// 加载一页近期日程：按方向从游标起做「30 天窗循环查询 + 切片推进」，
+    /// 直到凑满页大小、探明尽头或达到单页窗口循环上限（12 窗，约 360 天，
+    /// 防极端数据下无限查询）。加载中同方向忽略重复触发；重置产生的过期
+    /// 结果由请求 ID 竞态守卫兜底丢弃。EventKit 查询薄层沿用
+    /// fetchUpcomingCalendarItems 的既有谓词与过滤（半开区间窗口逐窗平铺）。
+    private func loadUpcomingPage(direction: UpcomingPageDirection) {
+        let preferences = settingsStore.menuBarPreferences
+        guard let startCursor = direction == .future
+            ? upcomingFutureCursor
+            : upcomingPastCursor else {
             return
         }
 
-        // 每次全量重查当前窗口，两端加载标记一起置位；加载期间两端哨兵
-        // 均被进度行替换，天然串行化，无并发扩窗竞态
-        isLoadingUpcomingPast = true
-        isLoadingUpcomingFuture = true
+        // 同方向 in-flight 防重：加载中忽略重复触发
+        switch direction {
+        case .past:
+            guard !isLoadingUpcomingPast else { return }
+            isLoadingUpcomingPast = true
+        case .future:
+            guard !isLoadingUpcomingFuture else { return }
+            isLoadingUpcomingFuture = true
+        }
+
+        let now = timeRefreshCoordinator.currentDate
+        // 时间范围上限设置（30/90/180/全部）换算为未来方向绝对尽头；
+        // 0 表示不限制。过去方向无下限，不使用该边界
+        let futureLimitEnd: Date? = preferences.upcomingDayLimit > 0
+            ? displayCalendar.date(byAdding: .day, value: preferences.upcomingDayLimit, to: now)
+            : nil
+
         let requestID = UUID()
         upcomingRequestID = requestID
+        // 已加载身份快照：页界同刻条目与页满后同窗复查的去重依据
+        var loadedIdentifiers = Set(upcomingItems.map(\.selectionIdentifier))
         let enabledCalendarIDs = preferences.upcomingEnabledCalendarIDs
         let includeReminders = preferences.upcomingIncludeReminders
         let enabledReminderCalendarIDs = preferences.upcomingEnabledReminderCalendarIDs
+        let calendar = displayCalendar
+        let service = eventService
 
         Task {
-            let items = await eventService.fetchUpcomingCalendarItems(
-                pastStart: pastStart,
-                futureEnd: futureEnd,
-                enabledCalendarIDs: enabledCalendarIDs,
-                includeReminders: includeReminders,
-                enabledReminderCalendarIDs: enabledReminderCalendarIDs
-            )
+            var collected: [CalendarItem] = []
+            var cursor = startCursor
+            var isResumingWindow = false
+            var isExhausted = false
+            var queriedWindowCount = 0
+
+            while !isExhausted,
+                  collected.count < RootPopoverView.upcomingPageSize,
+                  queriedWindowCount < RootPopoverView.upcomingPageMaxWindows {
+                // 窗口边界：未来窗 [cursor, cursor+30天) 裁剪到设置上限；
+                // 过去窗 [cursor-30天, cursor)，游标即窗上界
+                let windowStart: Date
+                let windowEnd: Date
+                switch direction {
+                case .future:
+                    windowStart = cursor
+                    var end = calendar.date(
+                        byAdding: .day,
+                        value: RootPopoverView.upcomingPageWindowDays,
+                        to: cursor
+                    ) ?? cursor
+                    if let futureLimitEnd, end > futureLimitEnd {
+                        end = futureLimitEnd
+                    }
+                    windowEnd = end
+                case .past:
+                    windowEnd = cursor
+                    windowStart = calendar.date(
+                        byAdding: .day,
+                        value: -RootPopoverView.upcomingPageWindowDays,
+                        to: cursor
+                    ) ?? cursor
+                }
+                guard windowEnd > windowStart else {
+                    isExhausted = true
+                    break
+                }
+
+                queriedWindowCount += 1
+                let windowItems = await service.fetchUpcomingCalendarItems(
+                    pastStart: windowStart,
+                    futureEnd: windowEnd,
+                    enabledCalendarIDs: enabledCalendarIDs,
+                    includeReminders: includeReminders,
+                    enabledReminderCalendarIDs: enabledReminderCalendarIDs
+                )
+                let step = RootPopoverView.advanceUpcomingPage(
+                    direction: direction,
+                    windowItems: windowItems,
+                    windowStart: windowStart,
+                    windowEnd: windowEnd,
+                    collectedCount: collected.count,
+                    loadedIdentifiers: loadedIdentifiers,
+                    pageSize: RootPopoverView.upcomingPageSize,
+                    futureLimitEnd: futureLimitEnd,
+                    isResumingWindow: isResumingWindow
+                )
+                collected.append(contentsOf: step.slice.takenItems)
+                for item in step.slice.takenItems {
+                    loadedIdentifiers.insert(item.selectionIdentifier)
+                }
+                // 页满后下一轮为同窗复查，复查窗零新条目不算过去端尽头
+                isResumingWindow = step.slice.isPageFull
+                if let nextWindowStart = step.nextWindowStart {
+                    cursor = nextWindowStart
+                }
+                isExhausted = step.isExhausted
+            }
+
+            // 循环上限触达仍未凑满：返回已有并视为尽头（游标置 nil）
+            let hitWindowCap = !isExhausted
+                && collected.count < RootPopoverView.upcomingPageSize
+
             await MainActor.run {
                 guard upcomingRequestID == requestID else { return }
-                upcomingItems = items
-                if let pastExtensionBoundary {
-                    // 新扩的过去窗带不回任何条目，视为已到历史起点，隐藏顶部哨兵
-                    let hasNewPastItems = items.contains {
-                        ($0.startDate ?? .distantFuture) < pastExtensionBoundary
-                    }
-                    isUpcomingPastExhausted = !hasNewPastItems
+                upcomingItems.append(contentsOf: collected)
+                let nextCursor: Date? = (isExhausted || hitWindowCap) ? nil : cursor
+                switch direction {
+                case .past:
+                    upcomingPastCursor = nextCursor
+                    isLoadingUpcomingPast = false
+                case .future:
+                    upcomingFutureCursor = nextCursor
+                    isLoadingUpcomingFuture = false
                 }
-                if let futureExtensionBoundary {
-                    // 新扩的未来窗带不回任何落在新扩展区间内的条目，视为已到
-                    // 未来终点，隐藏底部哨兵
-                    isUpcomingFutureExhausted = RootPopoverView
-                        .isUpcomingFutureWindowExhausted(
-                            items: items,
-                            previousFutureEnd: futureExtensionBoundary,
-                            newFutureEnd: futureEnd
-                        )
-                }
-                isLoadingUpcomingPast = false
-                isLoadingUpcomingFuture = false
             }
         }
     }
 
-    /// 当前窗口的过去端点：今天零点起向上游回溯 upcomingPastDays 天。
-    private func upcomingPastStart(from now: Date) -> Date? {
-        displayCalendar.date(
-            byAdding: .day,
-            value: -upcomingPastDays,
-            to: displayCalendar.startOfDay(for: now)
-        )
-    }
-
-    /// 滚动到顶自动加载：窗口起点按固定步幅向过去扩展，不设天数硬上限，
-    /// 探明历史起点（isUpcomingPastExhausted）后停止继续扩展；加载进行中
-    /// 直接忽略触发，过期结果另有 upcomingRequestID 竞态守卫兜底丢弃。
+    /// 下拉过拉触发：向过去加载一页（每页 10 条）。过去端已探明尽头
+    /// （游标 nil）或加载中时，页装配入口直接忽略触发。
     private func handleLoadMoreUpcomingPast() {
-        guard !isLoadingUpcomingPast, !isUpcomingPastExhausted else { return }
-        guard let boundary = upcomingPastStart(from: timeRefreshCoordinator.currentDate) else {
-            return
-        }
-        upcomingPastDays += RootPopoverView.upcomingWindowStepDays
-        loadUpcoming(pastExtensionBoundary: boundary)
+        loadUpcomingPage(direction: .past)
     }
 
-    /// 滚动到底自动加载：窗口终点按固定步幅扩展，直到设置的上限（0 为无
-    /// 上限）或探明未来终点（isUpcomingFutureExhausted，防止无上限模式下
-    /// 哨兵带不回新条目时无限循环触发）。加载进行中或已达界直接忽略触发，
-    /// 从源头挡掉 in-flight 期间的重复调用；过期结果另有 upcomingRequestID
-    /// 竞态守卫兜底丢弃。
+    /// 底部哨兵触发：向未来加载下一页，防重语义同过去端。
     private func handleLoadMoreUpcomingFuture() {
-        guard !isLoadingUpcomingFuture, !isUpcomingFutureExhausted else { return }
-
-        let preferences = settingsStore.menuBarPreferences
-        var nextWindow = upcomingFutureDays + RootPopoverView.upcomingWindowStepDays
-
-        if preferences.upcomingDayLimit > 0 {
-            nextWindow = min(nextWindow, preferences.upcomingDayLimit)
-        }
-
-        guard nextWindow > upcomingFutureDays else { return }
-        // 扩窗前捕获旧窗口终点，供结果判定新条目是否落入扩展区间
-        let previousFutureEnd = displayCalendar.date(
-            byAdding: .day,
-            value: upcomingFutureDays,
-            to: timeRefreshCoordinator.currentDate
-        )
-        upcomingFutureDays = nextWindow
-        loadUpcoming(futureExtensionBoundary: previousFutureEnd)
+        loadUpcomingPage(direction: .future)
     }
 
     private func clearLoadedUpcoming() {
@@ -670,6 +787,8 @@ struct RootPopoverView: View {
         upcomingItems = []
         isLoadingUpcomingPast = false
         isLoadingUpcomingFuture = false
+        upcomingFutureCursor = nil
+        upcomingPastCursor = nil
     }
 
     private func syncSelectedEvent(with items: [CalendarItem]) {
@@ -708,7 +827,10 @@ struct RootPopoverView: View {
         do {
             try eventService.toggleReminderCompletion(reminder)
             refreshEventsForCurrentSelection()
-            loadUpcoming()
+            // 已完成的提醒直接从已加载分页中移除；分页游标与滚动位置不动，
+            // 全量重取留给下一次打开或数据源刷新触发
+            let toggledIdentifier = CalendarItem.reminder(reminder).selectionIdentifier
+            upcomingItems.removeAll { $0.selectionIdentifier == toggledIdentifier }
         } catch {
             print("Failed to toggle reminder completion: \(error)")
         }

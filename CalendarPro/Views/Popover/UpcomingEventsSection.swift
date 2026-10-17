@@ -4,9 +4,10 @@ import EventKit
 // 文件头：
 // 职责：弹层“近期日程”可折叠分节。UpcomingSnapshot 负责把统一的 CalendarItem
 //       列表按天分组（纯函数，便于测试）；UpcomingEventsSection 负责折叠标题、
-//       天头与条目渲染及双向窗口两端滚动到边自动加载。
-// 输入：EventService.fetchUpcomingCalendarItems 取回的近期窗口内 [CalendarItem]、
-//       当前时间（TimeRefreshCoordinator）与分组用日历。
+//       天头与条目渲染、条数分页交互（底部哨兵自动加载下一页、顶部下拉过拉
+//       向过去加载一页、弹层打开重置分页并回滚滚动位置）。
+// 输入：RootPopoverView 按页装配的 [CalendarItem]、当前时间
+//       （TimeRefreshCoordinator）、分页尽头与重置代数标记。
 // 输出：按天升序分组的快照结构 / 弹层内的分节视图。
 // 依赖：EventKit（EKEvent/EKReminder）、SwiftUI、AppLocalization（L/LF）。
 
@@ -117,18 +118,25 @@ struct UpcomingSnapshot {
 struct UpcomingEventsSection: View {
     private enum Metrics {
         static let expandedMaxHeight: CGFloat = 200
+        // 下拉过拉触发阈值：顶部锚偏移超过该值才触发向过去加载一页
+        static let pastPullTriggerOffset: CGFloat = 40
+        // 滚动坐标空间与回顶锚标识（仅视图内使用）
+        static let scrollCoordinateSpace = "upcomingEventsScrollSpace"
+        static let topAnchorID = "upcomingEventsTopAnchor"
     }
 
     let items: [CalendarItem]
     let isLoadingPast: Bool
     let isLoadingFuture: Bool
-    let windowDays: Int
-    let dayLimit: Int
     let hasMorePast: Bool
     let hasMoreFuture: Bool
     let defaultExpanded: Bool
+    // 分页重置代数：RootPopoverView 每次重置分页递增，本节据此把滚动
+    // 位置显式拉回列表顶（数据重置后滚动偏移会残留）
+    let resetGeneration: Int
     let timeRefreshCoordinator: TimeRefreshCoordinator
     let selectedEventIdentifier: String?
+    let onResetPagination: () -> Void
     let onLoadMorePast: () -> Void
     let onLoadMoreFuture: () -> Void
     let onSelectEvent: (EKEvent) -> Void
@@ -141,6 +149,9 @@ struct UpcomingEventsSection: View {
     // 挂载即触发）按设置重置展开态——弹层每次打开取设置初值，打开期间
     // 手动折叠不会触发 onAppear，即时生效且不被复位，不持久化
     @State private var isExpanded: Bool
+    // 下拉触发臂位：过拉触发后解除武装，需回弹到阈值内才重新武装，
+    // 避免按住不放或加载结束后仍停在阈值上方时连续触发
+    @State private var isPastPullArmed: Bool = true
 
     /// 显式初始化器：入参由 CalendarPopoverView 透传（数据与回调来自
     /// RootPopoverView 与用户设置），defaultExpanded 来自「默认展开版块」
@@ -151,13 +162,13 @@ struct UpcomingEventsSection: View {
         items: [CalendarItem],
         isLoadingPast: Bool,
         isLoadingFuture: Bool,
-        windowDays: Int,
-        dayLimit: Int,
         hasMorePast: Bool,
         hasMoreFuture: Bool,
         defaultExpanded: Bool,
+        resetGeneration: Int,
         timeRefreshCoordinator: TimeRefreshCoordinator,
         selectedEventIdentifier: String?,
+        onResetPagination: @escaping () -> Void,
         onLoadMorePast: @escaping () -> Void,
         onLoadMoreFuture: @escaping () -> Void,
         onSelectEvent: @escaping (EKEvent) -> Void,
@@ -167,13 +178,13 @@ struct UpcomingEventsSection: View {
         self.items = items
         self.isLoadingPast = isLoadingPast
         self.isLoadingFuture = isLoadingFuture
-        self.windowDays = windowDays
-        self.dayLimit = dayLimit
         self.hasMorePast = hasMorePast
         self.hasMoreFuture = hasMoreFuture
         self.defaultExpanded = defaultExpanded
+        self.resetGeneration = resetGeneration
         self.timeRefreshCoordinator = timeRefreshCoordinator
         self.selectedEventIdentifier = selectedEventIdentifier
+        self.onResetPagination = onResetPagination
         self.onLoadMorePast = onLoadMorePast
         self.onLoadMoreFuture = onLoadMoreFuture
         self.onSelectEvent = onSelectEvent
@@ -199,11 +210,14 @@ struct UpcomingEventsSection: View {
                     .frame(maxHeight: Metrics.expandedMaxHeight)
             }
         }
-        // 弹层每次打开内容视图重新挂载会再次触发 onAppear，此处按当前
-        // 设置重置展开态；State(initialValue:) 仅视图首次创建时生效，
-        // 无法覆盖「重开弹层取新设置值」的场景
+        // 弹层每次打开内容视图重新挂载会再次触发 onAppear：按当前设置
+        // 重置展开态并重置分页（先重置分页状态再触发第一页装载，均由
+        // onResetPagination 回调在 RootPopoverView 内一次完成），滚动
+        // 位置由 resetGeneration 变化后的显式 scrollTo 拉回列表顶
         .onAppear {
             isExpanded = defaultExpanded
+            isPastPullArmed = true
+            onResetPagination()
         }
     }
 
@@ -238,7 +252,8 @@ struct UpcomingEventsSection: View {
         .accessibilityIdentifier("calendar-popover-upcoming-toggle")
     }
 
-    /// 标题右侧计数文案：任一端加载中显示 Loading，否则显示条目总数。
+    /// 标题右侧计数文案：任一端加载中显示 Loading，否则显示已加载条目数
+    /// （条数分页模型下为当前已装载各页的总数）。
     /// - Parameter snapshot: body 内单次求值的分组快照
     private func countText(for snapshot: UpcomingSnapshot) -> String {
         if isLoadingPast || isLoadingFuture {
@@ -247,15 +262,8 @@ struct UpcomingEventsSection: View {
         return LF("%d items", snapshot.totalItemCount)
     }
 
-    /// 底部哨兵是否继续渲染：未来端未探明终点（hasMoreFuture 来自
-    /// RootPopoverView 的 exhaustion 标记）且未达设置上限（dayLimit 为 0
-    /// 表示不限制窗口大小）。
-    private var canLoadMoreFuture: Bool {
-        hasMoreFuture && (dayLimit == 0 || windowDays < dayLimit)
-    }
-
-    /// 展开态内容：空态文案或按天分组的滚动列表（双向窗口，滚动到端点
-    /// 自动向过去/未来扩窗）。
+    /// 展开态内容：空态文案或按天分组的滚动列表（条数分页：底部哨兵自动
+    /// 加载下一页，顶部下拉过拉向过去加载一页，打开时重置并回顶）。
     /// - Parameter snapshot: body 内单次求值的分组快照
     @ViewBuilder
     private func expandedContent(_ snapshot: UpcomingSnapshot) -> some View {
@@ -266,30 +274,85 @@ struct UpcomingEventsSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 4)
         } else {
-            ScrollView(.vertical) {
-                // 用 LazyVStack 而非 VStack：普通 VStack 会一次性物化全部子
-                // 视图，端点哨兵的 onAppear 在展开瞬间就会立即触发；LazyVStack
-                // 只在子视图滚动到可视区域附近才渲染，哨兵出现即代表“已到端”
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    if isLoadingPast {
-                        progressRow
-                    } else if hasMorePast {
-                        loadPastTrigger
-                    }
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    // 用 LazyVStack 而非 VStack：普通 VStack 会一次性物化全部子
+                    // 视图，底部哨兵的 onAppear 在展开瞬间就会立即触发；LazyVStack
+                    // 只在子视图滚动到可视区域附近才渲染，哨兵出现即代表“差不多
+                    // 到底”
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        topRow
 
-                    ForEach(snapshot.dayGroups) { group in
-                        dayGroupView(group)
-                    }
+                        ForEach(snapshot.dayGroups) { group in
+                            dayGroupView(group)
+                        }
 
-                    if isLoadingFuture {
-                        progressRow
-                    } else if canLoadMoreFuture {
-                        loadFutureTrigger
+                        if isLoadingFuture {
+                            progressRow
+                        } else if hasMoreFuture {
+                            loadFutureTrigger
+                        }
                     }
+                    .padding(.vertical, 1)
                 }
-                .padding(.vertical, 1)
+                .coordinateSpace(name: Metrics.scrollCoordinateSpace)
+                .onPreferenceChange(PastPullOffsetKey.self) { offset in
+                    handlePastPullOffset(offset)
+                }
+                .onChange(of: resetGeneration) { _, _ in
+                    // 数据重置后滚动偏移会残留，显式回滚到列表顶锚点
+                    proxy.scrollTo(Metrics.topAnchorID, anchor: .top)
+                }
             }
         }
+    }
+
+    /// 列表顶部行：常驻回顶锚（兼下拉偏移探针）+ 过去端状态行（加载中
+    /// 显示进度，否则尚有更早条目时显示下拉提示；过去端不再自动加载）。
+    @ViewBuilder
+    private var topRow: some View {
+        // 顶部锚：scrollTo 的回顶目标；GeometryReader 读取其在滚动坐标
+        // 空间的 minY 供下拉过拉判定（onScrollGeometryChange 需 macOS 15+，
+        // 工程部署目标 14.0，故用偏移探针）
+        GeometryReader { geometry in
+            Color.clear.preference(
+                key: PastPullOffsetKey.self,
+                value: geometry.frame(in: .named(Metrics.scrollCoordinateSpace)).minY
+            )
+        }
+        .frame(height: 0)
+        .id(Metrics.topAnchorID)
+
+        if isLoadingPast {
+            progressRow
+        } else if hasMorePast {
+            pastPullHintRow
+        }
+    }
+
+    /// 下拉提示行：过去方向还有未加载条目时显示；触发加载后被进度行替换
+    /// （isLoadingPast 分支互斥）。
+    private var pastPullHintRow: some View {
+        Text(L("Pull Down to Load Earlier Events"))
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, 2)
+    }
+
+    /// 下拉过拉检测：顶部锚偏移超过阈值且已武装时触发向过去加载一页；
+    /// 触发后解除武装，回弹到阈值内才重新武装（与下拉刷新一致的「过拉
+    /// 触发、回弹再拉」语义）；加载中或过去端已探明尽头不触发。
+    /// - Parameter offset: 顶部锚在滚动坐标空间的 minY，静止时约为内容
+    ///   顶部内边距，下拉过拉时增大
+    private func handlePastPullOffset(_ offset: CGFloat) {
+        if offset < Metrics.pastPullTriggerOffset {
+            isPastPullArmed = true
+            return
+        }
+        guard isPastPullArmed, !isLoadingPast, hasMorePast else { return }
+        isPastPullArmed = false
+        onLoadMorePast()
     }
 
     /// 端点加载中的进度行：与哨兵互斥渲染，加载期间哨兵不在视图层级内，
@@ -304,29 +367,16 @@ struct UpcomingEventsSection: View {
         .padding(.vertical, 4)
     }
 
-    /// 滚动到顶的加载哨兵：渲染出现即触发向过去扩窗回调。
-    /// 列表首元素在展开时通常可见，属预期行为——打开即自动向过去补一个
-    /// 窗口（30 天），内容不足一屏时连续加载；到达历史起点后 hasMorePast
-    /// 为 false，哨兵离开视图层级不再触发。
-    private var loadPastTrigger: some View {
-        Color.clear
-            .frame(height: 1)
-            .onAppear {
-                guard !isLoadingPast, hasMorePast else { return }
-                onLoadMorePast()
-            }
-    }
-
-    /// 滚动到底的加载哨兵：渲染出现即触发向未来扩窗回调。
-    /// 加载中上方分支换成进度指示、探明未来终点（hasMoreFuture 为 false）
-    /// 或达设置上限（canLoadMoreFuture 为 false）时哨兵都不在视图层级内，
-    /// 不会重复触发；一次加载结束后哨兵重新插入并再次触发 onAppear，内容
-    /// 不足一屏时也能连续加载直到占满视口、达上限或探明终点。
+    /// 滚动到底的加载哨兵：渲染出现即触发加载下一页（未来方向）。
+    /// 加载中上方分支换成进度指示、探明未来尽头（hasMoreFuture 为 false，
+    /// 含达设置上限与循环保护）时哨兵都不在视图层级内，不会重复触发；
+    /// 一次加载结束后哨兵重新插入并再次触发 onAppear，内容不足一屏时
+    /// 也能连续加载直到占满视口或探明尽头。
     private var loadFutureTrigger: some View {
         Color.clear
             .frame(height: 1)
             .onAppear {
-                guard !isLoadingFuture, canLoadMoreFuture else { return }
+                guard !isLoadingFuture, hasMoreFuture else { return }
                 onLoadMoreFuture()
             }
     }
@@ -370,5 +420,15 @@ struct UpcomingEventsSection: View {
             }
             .buttonStyle(.plain)
         }
+    }
+}
+
+/// 下拉偏移透传 PreferenceKey：把顶部锚在滚动坐标空间中的 minY 传给
+/// onPreferenceChange 做过拉判定；单一数据源，reduce 直接取后值。
+private struct PastPullOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }

@@ -37,11 +37,12 @@ struct CalendarPopoverView: View {
     let upcomingItems: [CalendarItem]
     let isLoadingUpcomingPast: Bool
     let isLoadingUpcomingFuture: Bool
-    let upcomingWindowDays: Int
-    let upcomingDayLimit: Int
     let hasMoreUpcomingPast: Bool
     let hasMoreUpcomingFuture: Bool
     let upcomingDefaultExpanded: Bool
+    // 分页重置代数：每次弹层重置分页递增，「近期日程」分节据此把滚动
+    // 位置显式拉回列表顶
+    let upcomingResetGeneration: Int
     let selectedDate: Date?
     let items: [CalendarItem]
     let selectedEventIdentifier: String?
@@ -75,6 +76,7 @@ struct CalendarPopoverView: View {
     let onOpenReminder: (EKReminder) -> Void
     let onCreateItem: () -> Void
     let onCreateEventAt: (CalendarItemCreationTimeRange) -> Void
+    let onResetUpcomingPagination: () -> Void
     let onLoadMoreUpcomingPast: () -> Void
     let onLoadMoreUpcomingFuture: () -> Void
     let onOpenWeatherDetails: () -> Void
@@ -171,13 +173,13 @@ struct CalendarPopoverView: View {
                     items: upcomingItems,
                     isLoadingPast: isLoadingUpcomingPast,
                     isLoadingFuture: isLoadingUpcomingFuture,
-                    windowDays: upcomingWindowDays,
-                    dayLimit: upcomingDayLimit,
                     hasMorePast: hasMoreUpcomingPast,
                     hasMoreFuture: hasMoreUpcomingFuture,
                     defaultExpanded: upcomingDefaultExpanded,
+                    resetGeneration: upcomingResetGeneration,
                     timeRefreshCoordinator: timeRefreshCoordinator,
                     selectedEventIdentifier: selectedEventIdentifier,
+                    onResetPagination: onResetUpcomingPagination,
                     onLoadMorePast: onLoadMoreUpcomingPast,
                     onLoadMoreFuture: onLoadMoreUpcomingFuture,
                     onSelectEvent: onSelectEvent,
