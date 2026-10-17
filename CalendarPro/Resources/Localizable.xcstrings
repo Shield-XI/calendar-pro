@@ -901,19 +901,19 @@
         }
       }
     },
-    "Choose Calendars for Recent" : {
+    "Choose Calendars for All Events" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose Calendars for Recent Events"
+            "value" : "Choose Calendars for All Events"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择近期日程包含的日历"
+            "value" : "选择全部日程包含的日历"
           }
         }
       }
@@ -935,19 +935,19 @@
         }
       }
     },
-    "Choose Reminder Lists for Recent" : {
+    "Choose Reminder Lists for All Events" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose Reminder Lists for Recent Events"
+            "value" : "Choose Reminder Lists for All Events"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择近期日程包含的提醒列表"
+            "value" : "选择全部日程包含的提醒列表"
           }
         }
       }
@@ -1156,19 +1156,19 @@
         }
       }
     },
-    "Configure Recent Events" : {
+    "Configure All Events" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Configure the recent events section"
+            "value" : "Configure the all events section"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "配置近期日程版块"
+            "value" : "配置全部日程版块"
           }
         }
       }
@@ -2468,13 +2468,13 @@
         }
       }
     },
-    "Include Reminders in Recent" : {
+    "Include Reminders in All Events" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Include Reminders in Recent"
+            "value" : "Include Reminders in All Events"
           }
         },
         "zh-Hans" : {
@@ -3658,19 +3658,19 @@
         }
       }
     },
-    "No Recent Events" : {
+    "No Events" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No recent events"
+            "value" : "No events"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "暂无近期日程"
+            "value" : "暂无日程"
           }
         }
       }
@@ -5188,36 +5188,36 @@
         }
       }
     },
-    "Show Recent Section" : {
+    "Show All Events Section" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Recent Section"
+            "value" : "Show All Events Section"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示近期日程版块"
+            "value" : "显示全部日程版块"
           }
         }
       }
     },
-    "Show Recent Section Description" : {
+    "Show All Events Section Description" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show a collapsible section below the event list that lists recent events."
+            "value" : "Show a collapsible section below the event list that lists all events."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在日程列表下方显示可折叠的近期日程版块。"
+            "value" : "在日程列表下方显示可折叠的全部日程版块。"
           }
         }
       }
@@ -6021,13 +6021,13 @@
         }
       }
     },
-    "Recent Day Limit" : {
+    "All Events Day Limit" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recent Day Limit"
+            "value" : "All Events Day Limit"
           }
         },
         "zh-Hans" : {
@@ -6038,41 +6038,41 @@
         }
       }
     },
-    "Recent Events" : {
+    "All Events" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recent"
+            "value" : "All Events"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "近期日程"
+            "value" : "全部日程"
           }
         }
       }
     },
-    "Recent Events Detail Description" : {
+    "All Events Detail Description" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose whether the recent events section shows in the popover, its time window, and the sources included."
+            "value" : "Choose whether the all events section shows in the popover, its time window, and the sources included."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择近期日程版块是否在弹层中显示，以及时间范围与包含的数据来源。"
+            "value" : "选择全部日程版块是否在弹层中显示，以及时间范围与包含的数据来源。"
           }
         }
       }
     },
-    "Recent Today" : {
+    "All Today" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6089,7 +6089,7 @@
         }
       }
     },
-    "Recent Tomorrow" : {
+    "All Tomorrow" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -6106,7 +6106,7 @@
         }
       }
     },
-    "Recent Yesterday" : {
+    "All Yesterday" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {

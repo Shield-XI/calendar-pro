@@ -34,7 +34,7 @@ struct UpcomingEventsSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                GroupBox(L("Recent Events")) {
+                GroupBox(L("All Events")) {
                     recentEventsSection
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -106,10 +106,10 @@ struct UpcomingEventsSettingsView: View {
 
     private var recentEventsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle(L("Show Recent Section"), isOn: showUpcomingSectionBinding)
+            Toggle(L("Show All Events Section"), isOn: showUpcomingSectionBinding)
                 .toggleStyle(.checkbox)
 
-            Text(L("Show Recent Section Description"))
+            Text(L("Show All Events Section Description"))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -124,9 +124,9 @@ struct UpcomingEventsSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack {
-                    Text(L("Recent Day Limit"))
+                    Text(L("All Events Day Limit"))
                     Spacer()
-                    Picker(L("Recent Day Limit"), selection: upcomingDayLimitBinding) {
+                    Picker(L("All Events Day Limit"), selection: upcomingDayLimitBinding) {
                         Text(LF("%d days", 30)).tag(30)
                         Text(LF("%d days", 90)).tag(90)
                         Text(LF("%d days", 180)).tag(180)
@@ -136,7 +136,7 @@ struct UpcomingEventsSettingsView: View {
                     .labelsHidden()
                 }
 
-                Toggle(L("Include Reminders in Recent"), isOn: upcomingIncludeRemindersBinding)
+                Toggle(L("Include Reminders in All Events"), isOn: upcomingIncludeRemindersBinding)
                     .toggleStyle(.checkbox)
 
                 upcomingCalendarSourcesSection
@@ -160,7 +160,7 @@ struct UpcomingEventsSettingsView: View {
                 }
             }
         } else {
-            Text(L("Choose Calendars for Recent"))
+            Text(L("Choose Calendars for All Events"))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
 
@@ -209,7 +209,7 @@ struct UpcomingEventsSettingsView: View {
                 }
             }
         } else {
-            Text(L("Choose Reminder Lists for Recent"))
+            Text(L("Choose Reminder Lists for All Events"))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
 

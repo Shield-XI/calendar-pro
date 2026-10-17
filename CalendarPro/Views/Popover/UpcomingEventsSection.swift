@@ -83,7 +83,7 @@ struct UpcomingSnapshot {
         calendar: Calendar
     ) -> String {
         if calendar.isDate(dayStart, inSameDayAs: now) {
-            return L("Recent Today")
+            return L("All Today")
         }
 
         if let yesterday = calendar.date(
@@ -91,7 +91,7 @@ struct UpcomingSnapshot {
             value: -1,
             to: calendar.startOfDay(for: now)
         ), calendar.isDate(dayStart, inSameDayAs: yesterday) {
-            return L("Recent Yesterday")
+            return L("All Yesterday")
         }
 
         if let tomorrow = calendar.date(
@@ -99,7 +99,7 @@ struct UpcomingSnapshot {
             value: 1,
             to: calendar.startOfDay(for: now)
         ), calendar.isDate(dayStart, inSameDayAs: tomorrow) {
-            return L("Recent Tomorrow")
+            return L("All Tomorrow")
         }
 
         let formatter = DateFormatter()
@@ -235,7 +235,7 @@ struct UpcomingEventsSection: View {
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
 
-                Text(L("Recent Events"))
+                Text(L("All Events"))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .lineLimit(1)
 
@@ -308,7 +308,7 @@ struct UpcomingEventsSection: View {
     /// 空态文案行：无已加载条目且两端都不在加载时显示。留在 ScrollView
     /// 内渲染（见 expandedContent），下拉加载过去的入口不因空态丢失。
     private var emptyStateRow: some View {
-        Text(L("No Recent Events"))
+        Text(L("No Events"))
             .font(.system(size: 12))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)

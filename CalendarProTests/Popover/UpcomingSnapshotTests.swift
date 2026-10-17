@@ -169,7 +169,7 @@ final class UpcomingSnapshotTests: XCTestCase {
         )
 
         let group = try XCTUnwrap(snapshot.dayGroups.first)
-        XCTAssertEqual(group.headerText, L("Recent Yesterday"))
+        XCTAssertEqual(group.headerText, L("All Yesterday"))
     }
 
     func testMultiDayEventAppearsOnceInItsStartDayGroup() {
