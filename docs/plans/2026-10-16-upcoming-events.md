@@ -286,8 +286,92 @@ xcodebuild test -project CalendarPro.xcodeproj -scheme CalendarPro \
 本轮未复现。UI 测试按基线跳过（本机 Runner 环境问题，UI 测试代码未
 变动）；弹层重开展开态与无限循环链路以人工验证为准。
 
+## 条数分页交互模型重构（2026-10-17）
+
+针对用户三条反馈（打开即自动连续加载=默认加载全部；改为每页 10 条的
+条数分页；弹层打开重置到第一页并回顶），把「双向时间窗渐进」重构为
+「条数分页」，推翻时间窗渐进与端点跨打开保留两项旧决定：
+
+### 数据层（RootPopoverView）
+
+- 状态更换：`upcomingPastDays/upcomingFutureDays`（窗口天数）与
+  `isUpcomingPastExhausted/isUpcomingFutureExhausted`（达界标记）删除，
+  改为 `upcomingFutureCursor/upcomingPastCursor`（下一页查询窗边界游标，
+  nil=该方向尽头）与 `upcomingResetGeneration`（重置代数，驱动分节
+  回滚滚动位置）。
+- 新增纯静态函数 `advanceUpcomingPage(direction:windowItems:windowStart:
+  windowEnd:collectedCount:loadedIdentifiers:pageSize:futureLimitEnd:
+  isResumingWindow:)`（显式 nonisolated，供单测非主线程调用）：单窗
+  切片 + 游标推进一并输出（本窗取走条目/窗内去重前条数/页满标记 +
+  下一窗游标 + 是否尽头）。原 `isUpcomingFutureWindowExhausted` 删除。
+- 页装配循环 `loadUpcomingPage(direction:)`：从游标起逐 30 天窗查询
+  （EventKit 薄层沿用 `fetchUpcomingCalendarItems` 谓词与过滤，窗口
+  半开区间逐窗平铺），每窗过一遍纯函数，直到凑满 10 条、探明尽头或
+  触达单页 12 窗循环上限（仍未凑满返回已有并视为尽头）。页满时游标
+  停在当前窗起点，下一页复查同一窗按 `selectionIdentifier` 身份去重
+  续接页界——页界同刻条目不重不漏；递归提醒逐窗重复返回同一对象
+  同样被身份去重吸收，且「仅含重复的过去窗」不算空窗尽头。
+- 未来尽头=游标触达设置上限（30/90/180/全部换算绝对日期，0=无界）；
+  过去端无下限，空窗即尽头（沿用原启发式），页满后的同窗复查零新
+  条目不算尽头。多天事件语义沿用：`startDate` 早于窗起点的多天事件
+  不纳入（现行过滤不变），过去页铺开后在其开始日分组出现。
+- `resetUpcomingPaginationAndLoadFirstPage()`：清空条目、两端游标回到
+  当天零点、递增重置代数并装载第一页（未来方向从当天零点起 10 条，
+  含今天全天；过去方向初始 0 条）。授权/提醒授权/设置/store 变更与
+  跨天的重取统一走本方法；选中日期变化不再触碰近期日程（内容与选日
+  无关，原 `loadUpcoming()` 调用删除）；提醒勾选完成改为从已加载分页
+  中按身份移除（游标与滚动位置不动，全量重取留给下次打开/刷新）。
+
+### 交互层（UpcomingEventsSection / CalendarPopoverView）
+
+- 顶部自动哨兵（`loadPastTrigger`）删除；改为顶部常驻锚（GeometryReader
+  偏移探针 + 回顶目标）+ 状态行：加载中显示进度，否则尚有更早条目时
+  显示"下拉加载更早日程"提示（新增本地化 key
+  `Pull Down to Load Earlier Events`，en/zh-Hans 同步）。
+- 下拉过拉检测：探针读顶部锚在滚动坐标空间的 minY，超过约 40 pt 且
+  已武装时触发一次 `onLoadMorePast`，触发后解除武装、回弹到阈值内
+  重新武装（加载中不触发）。选型说明：`onScrollGeometryChange` 需
+  macOS 15+（编译探针证实），工程部署目标 14.0，故用 GeometryReader
+  探针。
+- 底部哨兵沿用，`canLoadMoreFuture`（dayLimit 组合判定）简化为
+  `hasMoreFuture`（尽头判定已含设置上限与循环保护）。
+- 弹层打开重置：分节 `onAppear`（重挂载触发）合并展开态重置与分页
+  重置（先重置分页再触发首载，均在 `onResetPagination` 回调内完成）；
+  `onChange(of: resetGeneration)` 驱动 `ScrollViewReader` 显式
+  `scrollTo` 回到列表顶锚（数据重置后偏移残留的修正）。
+- 透传层：`upcomingWindowDays/upcomingDayLimit` 两入参删除，新增
+  `upcomingResetGeneration` 与 `onResetUpcomingPagination`；
+  `hasMoreUpcomingPast/Future` 语义改为「游标非 nil」。
+
+### 测试
+
+- `UpcomingSnapshotTests`：删除 6 条未来端扩窗达界用例；新增 12 条
+  分页切片/游标推进用例：页满复查同窗、稀疏窗推进、未来空窗不尽头、
+  上限尽头、跨页续接跳过已加载、同刻条目跨页界不重不漏、过去向取
+  最近一批、过去空窗尽头、仅含已加载递归提醒的过去窗推进、复查窗
+  零新条目推进、过去窗耗尽推进、页大小边界（已满不取）。
+
+### 验证
+
+```bash
+xcodebuild build -project CalendarPro.xcodeproj -scheme CalendarPro \
+  -destination 'platform=macOS' -derivedDataPath .dd
+# BUILD SUCCEEDED
+
+xcodebuild test -project CalendarPro.xcodeproj -scheme CalendarPro \
+  -destination 'platform=macOS' -derivedDataPath .dd \
+  -skip-testing:CalendarProUITests
+# Executed 411 tests, with 0 failures (0 unexpected)
+```
+
+备注：411 = 基线 405 − 删除 6（扩窗达界）+ 新增 12（分页切片/游标）。
+已知 flaky 用例 `testStoreChangeRevisionIncrementsOnNotification` 本轮
+未复现。UI 测试按基线跳过（本机 Runner 环境问题，UI 测试代码未变动）。
+下拉过拉触发、弹层打开重置与回顶属运行时交互链路，静态验证编译与
+单测覆盖纯函数部分，交互链路以人工验证为准（无新增源文件，未跑 regen）。
+
 ## 未确定项 / 后续可迭代
 
-- 扩窗后不做已加载数据的增量合并，每次全量重查（窗口内数据量小，可接受）。
+- 下拉过拉触发、打开重置回顶等交互链路以人工验证为准（见上）。
 - 递归提醒按天近似展开（见设计文档限制），如需精确支持例外日期需引入
   EventKit 逐展开查询或本地完整递归求解。
