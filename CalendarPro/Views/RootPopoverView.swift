@@ -68,6 +68,11 @@ struct RootPopoverView: View {
     // 重置/清空时统一递增两个 ID 作废所有在途加载
     @State private var upcomingPastRequestID = UUID()
     @State private var upcomingFutureRequestID = UUID()
+    // 分方向页满复查标记：上一次页装配以页满收尾（未尽头）时置位，下一
+    // 次装载的第一窗按同窗复查处理（复查窗零新条目不算过去端尽头），
+    // 完成块按是否页满收尾回写；重置/清空时归 false
+    @State private var isUpcomingPastResumingWindow = false
+    @State private var isUpcomingFutureResumingWindow = false
     @State private var almanacDescriptor: AlmanacDescriptor?
     @State private var weatherDescriptor: WeatherDescriptor?
     @State private var isLoadingWeather: Bool = false
@@ -128,10 +133,11 @@ struct RootPopoverView: View {
     ///   - isResumingWindow: 本窗是否为页满中断后的同窗复查；复查窗零
     ///     新条目只代表窗口耗尽，不算过去端尽头
     /// - Returns: 本窗切片、下一窗游标（nil=尽头）、是否已探明尽头
-    /// - Note: 页满时游标停在当前窗起点，下一页复查同一窗并用身份去重
-    ///   续接页界（等价于「页游标=已取条目极值之后」，且同刻条目可跨页
-    ///   不重不漏）；窗口耗尽未凑满时未来游标推进到窗尾（触达上限即
-    ///   尽头，空窗不算），过去游标推进到窗头（空窗即尽头）。
+    /// - Note: 页满时游标停在当前窗内（未来=窗起点、过去=窗上界），下一
+    ///   页复查同一窗并用身份去重续接页界（等价于「页游标=已取条目极值
+    ///   之后」，且同刻条目可跨页不重不漏）；窗口耗尽未凑满时未来游标
+    ///   推进到窗尾（触达上限即尽头，空窗不算），过去游标推进到窗头
+    ///   （空窗即尽头）。
     /// - Note: 纯函数无隔离依赖，显式 nonisolated 供非主线程上下文与
     ///   单测直接调用。
     nonisolated static func advanceUpcomingPage(
@@ -171,9 +177,13 @@ struct RootPopoverView: View {
             isPageFull: collectedCount + taken.count >= pageSize
         )
 
-        // 页满：游标停在当前窗起点，下一页复查同一窗续接页界
+        // 页满：游标停在当前窗内，下一页复查同一窗续接页界——未来窗游
+        // 标=窗起点，复查游标即 windowStart；过去窗游标=窗上界，复查游
+        // 标须为 windowEnd（若回退到 windowStart，下次查询窗会跳到更早
+        // 一窗，本窗剩余条目永不复查，且下一窗为空会误判历史尽头）
         if slice.isPageFull {
-            return (slice, windowStart, false)
+            let resumeCursor = direction == .past ? windowEnd : windowStart
+            return (slice, resumeCursor, false)
         }
 
         switch direction {
@@ -631,9 +641,12 @@ struct RootPopoverView: View {
         }
 
         // 重置先于首载：递增两方向请求 ID 作废所有在途加载，旧请求结果
-        // 由各自方向的竞态守卫丢弃
+        // 由各自方向的竞态守卫丢弃；页满复查标记随游标一并归位（首屏
+        // 第一页不是复查）
         upcomingPastRequestID = UUID()
         upcomingFutureRequestID = UUID()
+        isUpcomingPastResumingWindow = false
+        isUpcomingFutureResumingWindow = false
         upcomingItems = []
         isLoadingUpcomingPast = false
         isLoadingUpcomingFuture = false
@@ -664,19 +677,23 @@ struct RootPopoverView: View {
         }
 
         // 同方向 in-flight 防重：加载中忽略重复触发；请求 ID 写入本方向
-        // 竞态域，另一方向的自增与本方向无关
+        // 竞态域，另一方向的自增与本方向无关；页满复查标记按方向读取
+        // 快照（跨拉取传递，由上一次完成块回写）
         let requestID: UUID
+        let startIsResumingWindow: Bool
         switch direction {
         case .past:
             guard !isLoadingUpcomingPast else { return }
             isLoadingUpcomingPast = true
             requestID = UUID()
             upcomingPastRequestID = requestID
+            startIsResumingWindow = isUpcomingPastResumingWindow
         case .future:
             guard !isLoadingUpcomingFuture else { return }
             isLoadingUpcomingFuture = true
             requestID = UUID()
             upcomingFutureRequestID = requestID
+            startIsResumingWindow = isUpcomingFutureResumingWindow
         }
 
         let now = timeRefreshCoordinator.currentDate
@@ -697,7 +714,9 @@ struct RootPopoverView: View {
         Task {
             var collected: [CalendarItem] = []
             var cursor = startCursor
-            var isResumingWindow = false
+            // 首窗是否为页满中断后的同窗复查（跨拉取传递的快照）；
+            // 窗间传递由下方按 isPageFull 维护
+            var isResumingWindow = startIsResumingWindow
             var isExhausted = false
             var queriedWindowCount = 0
 
@@ -768,6 +787,10 @@ struct RootPopoverView: View {
             let hitWindowCap = !isExhausted
                 && collected.count < RootPopoverView.upcomingPageSize
             let nextCursor: Date? = (isExhausted || hitWindowCap) ? nil : cursor
+            // 页满收尾（未尽头）时游标停在窗内，下一次装载的第一窗为
+            // 同窗复查；尽头/触达上限收尾游标为 nil，标记归 false
+            let endedWithPageFull = nextCursor != nil
+                && collected.count >= RootPopoverView.upcomingPageSize
 
             await MainActor.run {
                 // 只校验本方向竞态域：另一方向入口自增自己的 ID 不作废
@@ -776,10 +799,12 @@ struct RootPopoverView: View {
                 case .past:
                     guard upcomingPastRequestID == requestID else { return }
                     upcomingPastCursor = nextCursor
+                    isUpcomingPastResumingWindow = endedWithPageFull
                     isLoadingUpcomingPast = false
                 case .future:
                     guard upcomingFutureRequestID == requestID else { return }
                     upcomingFutureCursor = nextCursor
+                    isUpcomingFutureResumingWindow = endedWithPageFull
                     isLoadingUpcomingFuture = false
                 }
                 upcomingItems.append(contentsOf: collected)
@@ -801,6 +826,8 @@ struct RootPopoverView: View {
     private func clearLoadedUpcoming() {
         upcomingPastRequestID = UUID()
         upcomingFutureRequestID = UUID()
+        isUpcomingPastResumingWindow = false
+        isUpcomingFutureResumingWindow = false
         upcomingItems = []
         isLoadingUpcomingPast = false
         isLoadingUpcomingFuture = false

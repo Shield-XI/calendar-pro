@@ -6,7 +6,8 @@ import EventKit
 // 职责：验证 UpcomingSnapshot 的按天分组纯函数（含双向窗口下的过去天组、
 //       「昨天」天头与多天事件单次分组）、EventService 事件/提醒近期窗口
 //       过滤（含递归展开近似），以及 RootPopoverView 条数分页的切片与
-//       游标推进纯函数（跨窗凑页/同刻不重不漏/尽头判定）的行为。
+//       游标推进纯函数（跨窗凑页/同刻不重不漏/尽头判定/页满跨拉取复查，
+//       后者经镜像生产循环的替身驱动）的行为。
 // 输入：GMT 固定日历 + DateComponents 构造的固定日期与 EventKit 夹具。
 // 输出：XCTest 断言结果。
 // 依赖：XCTest、EventKit、@testable CalendarPro。
@@ -382,6 +383,106 @@ final class UpcomingSnapshotTests: XCTestCase {
         }
     }
 
+    /// 镜像 loadUpcomingPage 生产循环的页装配替身：窗界构造（未来
+    /// [cursor, cursor+30天)、过去 [cursor-30天, cursor)，游标即过去窗
+    /// 上界）、切片推进、单页 12 窗循环上限、设置上限与页满复查标记的
+    /// 窗间传递均与生产实现一致；EventKit 窗口查询以 universe 窗内过滤
+    /// 替身（半开区间）。游标与复查标记由调用方跨调用传递，用于验证
+    /// 「页满中断 → 同窗复查」两轮拉取的纯函数序列契约；生产 @State
+    /// 接线本身无法单测，以人工验证为准。
+    private func mirrorLoadPage(
+        direction: RootPopoverView.UpcomingPageDirection,
+        cursor: Date,
+        isResumingWindow: Bool,
+        loadedIdentifiers: Set<String>,
+        universe: [CalendarItem],
+        futureLimitEnd: Date? = nil
+    ) -> (
+        collected: [CalendarItem],
+        nextCursor: Date?,
+        isResumingWindow: Bool,
+        isExhausted: Bool
+    ) {
+        var collected: [CalendarItem] = []
+        var workingCursor = cursor
+        var resumingWindow = isResumingWindow
+        var loaded = loadedIdentifiers
+        var isExhausted = false
+        var queriedWindowCount = 0
+
+        while !isExhausted,
+              collected.count < RootPopoverView.upcomingPageSize,
+              queriedWindowCount < RootPopoverView.upcomingPageMaxWindows {
+            let windowStart: Date
+            let windowEnd: Date
+            switch direction {
+            case .future:
+                windowStart = workingCursor
+                var end = calendar.date(
+                    byAdding: .day,
+                    value: RootPopoverView.upcomingPageWindowDays,
+                    to: workingCursor
+                ) ?? workingCursor
+                if let futureLimitEnd, end > futureLimitEnd {
+                    end = futureLimitEnd
+                }
+                windowEnd = end
+            case .past:
+                windowEnd = workingCursor
+                windowStart = calendar.date(
+                    byAdding: .day,
+                    value: -RootPopoverView.upcomingPageWindowDays,
+                    to: workingCursor
+                ) ?? workingCursor
+            }
+            guard windowEnd > windowStart else {
+                isExhausted = true
+                break
+            }
+
+            queriedWindowCount += 1
+            // EventKit 窗口查询替身：返回落入窗内的全部条目
+            let windowItems = universe.filter { item in
+                guard let startDate = item.startDate else { return false }
+                return startDate >= windowStart && startDate < windowEnd
+            }
+            let step = RootPopoverView.advanceUpcomingPage(
+                direction: direction,
+                windowItems: windowItems,
+                windowStart: windowStart,
+                windowEnd: windowEnd,
+                collectedCount: collected.count,
+                loadedIdentifiers: loaded,
+                pageSize: RootPopoverView.upcomingPageSize,
+                futureLimitEnd: nil,
+                isResumingWindow: resumingWindow
+            )
+            collected.append(contentsOf: step.slice.takenItems)
+            for item in step.slice.takenItems {
+                loaded.insert(item.selectionIdentifier)
+            }
+            resumingWindow = step.slice.isPageFull
+            if let steppedCursor = step.nextWindowStart {
+                workingCursor = steppedCursor
+            }
+            isExhausted = step.isExhausted
+        }
+
+        // 收尾判定与生产一致：尽头/触达循环上限视为尽头（游标 nil）；
+        // 页满收尾时下一次装载的第一窗为同窗复查
+        let hitWindowCap = !isExhausted
+            && collected.count < RootPopoverView.upcomingPageSize
+        let finalCursor: Date? = (isExhausted || hitWindowCap) ? nil : workingCursor
+        let endedWithPageFull = finalCursor != nil
+            && collected.count >= RootPopoverView.upcomingPageSize
+        return (
+            collected,
+            finalCursor,
+            endedWithPageFull,
+            isExhausted
+        )
+    }
+
     func testFuturePageTakesUpToPageSizeAndResumesSameWindow() {
         // 窗内 12 条取前 10 条凑满一页：游标停在当前窗起点（复查续接页界）
         let windowStart = makeDate(2026, 10, 16, 0, 0)
@@ -542,7 +643,8 @@ final class UpcomingSnapshotTests: XCTestCase {
 
     func testPastPageTakesMostRecentItemsFirst() {
         // 过去方向取离游标最近的一批：窗内 12 条取最近的 10 条（开始时间
-        // 最大者），输出按升序存放
+        // 最大者），输出按升序存放；页满后复查游标=窗上界（复查同一窗，
+        // 跳到窗起点会丢窗内剩余条目）
         let windowStart = makeDate(2026, 10, 1, 0, 0)
         let windowEnd = makeDate(2026, 10, 16, 0, 0)
         let items = makeSequentialEvents(count: 12, firstStart: windowStart)
@@ -561,8 +663,122 @@ final class UpcomingSnapshotTests: XCTestCase {
             step.slice.takenItems.map(\.startDate),
             Array(items.suffix(10)).map(\.startDate)
         )
-        XCTAssertEqual(step.nextWindowStart, windowStart)
+        XCTAssertEqual(step.nextWindowStart, windowEnd)
         XCTAssertFalse(step.isExhausted)
+    }
+
+    func testPastPageFullResumesWindowAtWindowEnd() {
+        // 修复回归：过去方向页满后的复查游标=窗上界 windowEnd（而非窗起
+        // 点），下一次查询窗仍是同一窗 [windowStart, windowEnd)，窗内剩余
+        // 条目可被复查取走
+        let windowStart = makeDate(2026, 10, 1, 0, 0)
+        let windowEnd = makeDate(2026, 10, 16, 0, 0)
+        let items = makeSequentialEvents(count: 12, firstStart: windowStart)
+
+        let step = advance(
+            direction: .past,
+            windowItems: items,
+            windowStart: windowStart,
+            windowEnd: windowEnd
+        )
+
+        XCTAssertEqual(step.slice.takenItems.count, 10)
+        XCTAssertTrue(step.slice.isPageFull)
+        XCTAssertEqual(step.nextWindowStart, windowEnd)
+        XCTAssertFalse(step.isExhausted)
+    }
+
+    func testPastCrossPullRetrievesAllItemsFromSingleWindow() throws {
+        // 数值复现修复场景（镜像生产循环跑两轮下拉）：单窗 12 条，第一拉
+        // 取最近 10 条页满；修复前第二拉查询窗跳到更早一窗（空）立即误判
+        // 历史尽头、丢失 2 条；修复后第二拉先复查同一窗拿走剩余 2 条，再
+        // 向更早窗推进，在更早空窗处尽头判定才成立
+        let windowStart = makeDate(2026, 10, 1, 0, 0)
+        let windowEnd = makeDate(2026, 10, 16, 0, 0)
+        let items = makeSequentialEvents(count: 12, firstStart: windowStart)
+
+        // 第一拉：游标=窗上界（今天零点），非复查
+        let firstPull = mirrorLoadPage(
+            direction: .past,
+            cursor: windowEnd,
+            isResumingWindow: false,
+            loadedIdentifiers: [],
+            universe: items
+        )
+        XCTAssertEqual(firstPull.collected.count, 10)
+        XCTAssertEqual(firstPull.nextCursor, windowEnd)
+        XCTAssertTrue(firstPull.isResumingWindow)
+        XCTAssertFalse(firstPull.isExhausted)
+
+        // 第二拉：游标与复查标记均由第一拉带回，先复查同一窗
+        let firstIdentifiers = Set(firstPull.collected.map(\.selectionIdentifier))
+        let secondPull = mirrorLoadPage(
+            direction: .past,
+            cursor: try XCTUnwrap(firstPull.nextCursor),
+            isResumingWindow: firstPull.isResumingWindow,
+            loadedIdentifiers: firstIdentifiers,
+            universe: items
+        )
+        // 修复点断言：复查窗带回剩余 2 条（修复前此拉带不回任何条目）
+        XCTAssertEqual(secondPull.collected.count, 2)
+        XCTAssertTrue(
+            Set(secondPull.collected.map(\.selectionIdentifier))
+                .isDisjoint(with: firstIdentifiers)
+        )
+        // 两拉合计拿全窗内 12 条，不重不漏
+        let allIdentifiers = firstIdentifiers
+            .union(secondPull.collected.map(\.selectionIdentifier))
+        XCTAssertEqual(allIdentifiers, Set(items.map(\.selectionIdentifier)))
+        // 更早窗（本替身宇宙中无更早条目）为空且本窗已复查完毕，尽头
+        // 判定此时才成立
+        XCTAssertTrue(secondPull.isExhausted)
+        XCTAssertNil(secondPull.nextCursor)
+        XCTAssertFalse(secondPull.isResumingWindow)
+    }
+
+    func testFutureCrossPullRetrievesAllItemsFromSingleWindow() throws {
+        // 未来方向同场景回归对照（镜像生产循环跑两轮下拉）：单窗 12 条且
+        // 窗尾即设置上限，第一拉取最早 10 条页满（游标停窗起点），第二拉
+        // 复查同窗拿剩余 2 条后触达上限判尽头，不重不漏
+        let windowStart = makeDate(2026, 10, 16, 0, 0)
+        let windowEnd = makeDate(2026, 11, 15, 0, 0)
+        let items = makeSequentialEvents(count: 12, firstStart: windowStart)
+
+        let firstPull = mirrorLoadPage(
+            direction: .future,
+            cursor: windowStart,
+            isResumingWindow: false,
+            loadedIdentifiers: [],
+            universe: items,
+            futureLimitEnd: windowEnd
+        )
+        XCTAssertEqual(firstPull.collected.count, 10)
+        XCTAssertEqual(firstPull.nextCursor, windowStart)
+        XCTAssertTrue(firstPull.isResumingWindow)
+        XCTAssertFalse(firstPull.isExhausted)
+
+        let firstIdentifiers = Set(firstPull.collected.map(\.selectionIdentifier))
+        let secondPull = mirrorLoadPage(
+            direction: .future,
+            cursor: try XCTUnwrap(firstPull.nextCursor),
+            isResumingWindow: firstPull.isResumingWindow,
+            loadedIdentifiers: firstIdentifiers,
+            universe: items,
+            futureLimitEnd: windowEnd
+        )
+        XCTAssertEqual(secondPull.collected.count, 2)
+        XCTAssertTrue(
+            Set(secondPull.collected.map(\.selectionIdentifier))
+                .isDisjoint(with: firstIdentifiers)
+        )
+        // 两拉合计拿全窗内 12 条，不重不漏；复查耗尽后触达设置上限判尽头
+        XCTAssertEqual(
+            firstIdentifiers.union(secondPull.collected.map(\.selectionIdentifier)),
+            Set(items.map(\.selectionIdentifier))
+        )
+        XCTAssertTrue(secondPull.isExhausted)
+        XCTAssertNil(secondPull.nextCursor)
+        XCTAssertFalse(secondPull.isResumingWindow)
     }
 
     func testPastEmptyWindowExhausts() {
