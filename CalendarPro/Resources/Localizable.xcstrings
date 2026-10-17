@@ -4440,19 +4440,19 @@
         }
       }
     },
-    "Pull Down to Load Earlier Events" : {
+    "Load Earlier Events" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull down to load earlier events"
+            "value" : "Load Earlier Events"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下拉加载更早日程"
+            "value" : "加载更早日程"
           }
         }
       }
