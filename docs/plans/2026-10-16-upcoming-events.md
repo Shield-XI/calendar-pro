@@ -458,3 +458,109 @@ xcodebuild test -project CalendarPro.xcodeproj -scheme CalendarPro \
 - 下拉过拉触发、打开重置回顶等交互链路以人工验证为准（见上）。
 - 递归提醒按天近似展开（见设计文档限制），如需精确支持例外日期需引入
   EventKit 逐展开查询或本地完整递归求解。
+
+## 用户反馈批次二（2026-10-17：六项）
+
+用户真机反馈与代码质量点名，六项逐项独立提交：
+
+### 1. 更名「近期日程」→「全部日程」（commit 239aeb3）
+
+- `Localizable.xcstrings`：上一轮产生的 Recent* 系 13 个 key 原位再次
+  更名（`Recent Events`→`All Events`、`No Recent Events`→`No Events`、
+  `Recent Today/Yesterday/Tomorrow`→`All Today/All Yesterday/All
+  Tomorrow`、`Show Recent Section`→`Show All Events Section`、
+  `Configure Recent Events`→`Configure All Events`、`Recent Day Limit`
+  →`All Events Day Limit`、`Choose Calendars/Reminder Lists for Recent`
+  →`... for All Events`、`Include Reminders in Recent`→`Include
+  Reminders in All Events`、`Recent Events Detail Description`→`All
+  Events Detail Description`），en/zh-Hans 取值同步，「近期日程」措辞
+  统一为「全部日程」；key 原位更名不重排，控制 diff 范围。
+- 代码标识符（`UpcomingEventsSection`、`upcomingDayLimit` 等）与 JSON
+  存储字段名不动；测试引用同步。
+
+### 2. 过去方向加载改顶部显式入口行（commit 1350f92）
+
+- 下拉过拉探针方案整体删除（GeometryReader 偏移探针、
+  `PastPullOffsetKey`、武装状态、下拉提示行及 `Pull Down to Load
+  Earlier Events` key、滚动坐标空间）。推翻原因：macOS SwiftUI
+  ScrollView 无弹性过拉，真机触控板拖动穿透到弹窗移动、鼠标滚轮到顶
+  无过拉偏移，40 pt 触发阈值从未达成，入口实际失效。
+- 改为列表最顶部常驻「加载更早」入口行：hasMorePast 时渲染
+  chevron.up +「加载更早日程」按钮行（`.plain` Button，鼠标/触控板/
+  完全键盘访问同一控件），点击触发 `handleLoadMoreUpcomingPast`；
+  加载中被进度行替换，尽头后不渲染；空态文案仍在 ScrollView 内渲染，
+  入口行不因未来无条目丢失（承接 f3c0e38 语义）。回顶锚保留。
+
+### 3. 弹层打开复位改显式时序通道（commit 2e31906）
+
+- 调查结论（行为证据判断）：分节 `onAppear` 重开不触发。若触发，
+  `resetUpcomingPaginationAndLoadFirstPage` 会清空条目并回装第一页，
+  用户不可能仍看到已加载页；真机反馈「重开后已加载页与滚动位置原样
+  保留」即证明未触发。机制：`PopoverController` 一次性创建并复用
+  contentViewController，NSPopover 关闭/重开不以 SwiftUI 可感知的
+  方式卸载/重挂内容视图，onAppear 首次后不再重复（与「首屏正常装载」
+  并存一致）。上一批 532971d 探针「onAppear 会重新触发」的结论按本批
+  真机证据修正。未加一次性诊断日志（GUI 菜单栏交互无法在本环境驱动）。
+- 修法：`CalendarPopoverViewModel` 新增 `popoverPresentationGeneration`
+  与 `markPopoverPresented()`；`showPopover` 在 show 前递增（与
+  refreshNow/checkAndResetIfNeeded 同一接线位置）；
+  `RootPopoverView` onChange 该代数触发复位，`onAppear` 保留一次首载
+  兜底（双路由由分方向请求 ID 守卫吸收）；分节展开态重置改由
+  `presentationGeneration` 入参 onChange 驱动，分节 onAppear 整体删除，
+  `onResetPagination` 回调链（分节→CalendarPopoverView→RootPopoverView）
+  随之删除；scrollTo 回顶仍由 resetGeneration 驱动。
+- 新增单测 `testMarkPopoverPresentedIncrementsPresentationGeneration`。
+
+### 4. 分节限高 240pt（commit a5aaffb）
+
+- `Metrics.expandedMaxHeight` 200→240，对齐看板分支取值；只约束展开态
+  内容区（不含标题行），超出在分节内滚动，收起态不受影响。
+
+### 5. 弹层位置约束（commit d85ce8b）
+
+- 根因调查：NSPopover 默认不可拖（`popoverShouldDetach` 默认 false 且
+  macOS 14 起弃用），但近期 macOS 的弹层私有窗口（_NSPopoverWindow）
+  支持按背景拖动；弹层为锚定窗口，被拖出屏幕顶部后无自动回弹，月份头
+  被裁切。判定为用户拖动弹层窗口所致，非 ScrollView 未消费拖拽。
+- 修法（PopoverController 最小 diff，仅位置/拖动约束）：新增
+  `popoverDidShow`，将弹层窗口 `isMovableByWindowBackground` 与
+  `isMovable` 置 false，从根上禁止拖动；每次 show 的系统定位是程序式
+  设 frame，不受影响。该改动可同款 cherry-pick 到看板分支。
+
+### 6. 去 AI 味注释清理（commit b6d7837）
+
+- 分支 diff 涉及的全部 swift 文件注释统一英文、稀疏只讲 why；删除
+  模板化文件头/函数头（参数返回副作用清单）与实现历史类注释（修复
+  记录/验收发现/数值复现叙事），历史留在 commit message 与本文档；
+  公共契约保留一行英文摘要；测试夹具中文标题字面量改英文。不重命名
+  标识符、不做结构性重构。
+- 自查：5 个新增文件 `grep -P '^\s*//.*[\x{4e00}-\x{9fff}]'`（含
+  `///` 同式）0 命中；分支 diff 全部 swift 文件中文注释行为 0。注释
+  行数 376→293（-83）。
+
+### 验证
+
+```bash
+xcodebuild build -project CalendarPro.xcodeproj -scheme CalendarPro \
+  -destination 'platform=macOS' -derivedDataPath .dd
+# BUILD SUCCEEDED（六项各自提交前均单独通过）
+
+xcodebuild test -project CalendarPro.xcodeproj -scheme CalendarPro \
+  -destination 'platform=macOS' -derivedDataPath .dd \
+  -skip-testing:CalendarProUITests
+# Executed 415 tests, with 0 failures (0 unexpected)
+```
+
+备注：415 = 基线 414 + 1（弹层展示代数单测）。已知 flaky 用例
+`testStoreChangeRevisionIncrementsOnNotification` 本轮未复现。UI 测试
+按基线跳过（本机 Runner 环境问题，UI 测试代码未变动）。无新增源文件，
+未跑 regen。
+
+### 人工验证项（视图时序/窗口层无法单测）
+
+- 入口行：鼠标/触控板点击与 Tab 聚焦回车触发加载更早；加载中转进度；
+  尽头后消失；空态（未来无条目）下入口行可用。
+- 显式复位通道：打开弹层加载若干页并滚动后关闭，重新点击菜单栏图标，
+  分页回到第一页、滚动回顶、展开态按「默认展开版块」设置取初值。
+- 位置约束：拖拽弹层窗口应无法移动弹层；多屏与换屏锚定行为不变。
+- 更名：弹层分节标题、设置侧栏与「全部日程」设置页文案为「全部日程」。
