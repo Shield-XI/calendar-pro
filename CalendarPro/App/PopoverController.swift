@@ -291,6 +291,18 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         return true
     }
 
+    func popoverDidShow(_ notification: Notification) {
+        // Popover windows on recent macOS are movable by background, so a
+        // user drag can push the popover past the screen top and clip its
+        // header (no bounce-back for anchored popover windows). Opt the
+        // window out of user movement entirely; system repositioning on
+        // each show is programmatic and unaffected by these flags.
+        guard let popoverWindow = (notification.object as? NSPopover)?
+            .contentViewController?.view.window else { return }
+        popoverWindow.isMovableByWindowBackground = false
+        popoverWindow.isMovable = false
+    }
+
     func popoverDidClose(_ notification: Notification) {
         interactionMonitor.stop()
         restoreTransientPopoverBehaviorIfNeeded()
