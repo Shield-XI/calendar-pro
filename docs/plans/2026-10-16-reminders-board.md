@@ -132,3 +132,14 @@
 - 测试：BoardSnapshotTests 4 个保留窗口用例、MenuBarPreferencesTests 2 个、
   SettingsStoreTests 1 个持久化用例与旧数据默认断言。
 - 本轮未新增源码/测试文件，未跑 regen。
+
+## 展开区限高统一 240pt（2026-10-17 第五轮）
+
+用户反馈第七条：看板分节展开态内容区需限高 240pt、超出内部滚动。
+核实现状：`RemindersBoardSection.boardContent` 已有等价机制
+（内部 ScrollView + `frame(maxHeight:)`），原值 200pt，仅统一为 240pt；
+收起态不渲染内容区，不受影响。
+
+- `CalendarPro/Views/Popover/RemindersBoardSection.swift`：
+  `Metrics.expandedMaxHeight` 200 → 240，注释与文件头同步。
+- 与第四轮同文件，独立提交（fix(board)）。

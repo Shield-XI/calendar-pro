@@ -11,10 +11,11 @@ import EventKit
 // 依赖：BoardSnapshot（纯函数布局）、TimeRefreshCoordinator（当前时间）、EventKit。
 // 副作用：无（仅渲染与回调转发）。
 
-/// 提醒事项看板分节：默认收起，展开后内部 ScrollView 限高约 200。
+/// 提醒事项看板分节：默认收起，展开后内容区（不含标题行）限高 240pt，超出内部滚动。
 struct RemindersBoardSection: View {
     private enum Metrics {
-        static let expandedMaxHeight: CGFloat = 200
+        // 展开态内容区（不含分节标题行）最大高度：超出时分节内部上下滚动，不无限撑长。
+        static let expandedMaxHeight: CGFloat = 240
         static let chevronWidth: CGFloat = 12
         static let priorityDotSize: CGFloat = 6
         static let rowLeadingIndent: CGFloat = 18
