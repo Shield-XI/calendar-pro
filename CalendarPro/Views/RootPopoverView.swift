@@ -57,7 +57,7 @@ struct RootPopoverView: View {
     // 条数分页游标：下一页查询窗的边界锚点。未来游标=下一窗起点（从
     // 今天零点向上推进）；过去游标=下一窗上界（从今天零点向下推进）；
     // nil=该方向已探明尽头（设置上限/空窗/循环保护）。弹层每次打开由
-    // 分节 onAppear 触发重置回第一页，不再跨打开保留窗口端点
+    // 弹层展示代数通道触发重置回第一页，不再跨打开保留窗口端点
     @State private var upcomingFutureCursor: Date?
     @State private var upcomingPastCursor: Date?
     // 分页重置代数：每次重置分页递增，「近期日程」分节据此把滚动位置
@@ -210,9 +210,17 @@ struct RootPopoverView: View {
                 timeRefreshCoordinator.refreshNow()
                 eventService.checkAuthorizationStatus()
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
-                // 近期日程的首载由「近期日程」分节 onAppear 触发（内容视图
-                // 重挂载即触发），那里同时负责重置分页与回滚滚动位置
+                // First-open first page load; popover reopen resets arrive via
+                // the presentation generation channel below instead, because
+                // onAppear does not re-fire reliably on reused popovers
+                resetUpcomingPaginationAndLoadFirstPage()
                 refreshInfoStrips()
+            }
+            .onChange(of: viewModel.popoverPresentationGeneration) { _, _ in
+                // Explicit reopen channel: PopoverController bumps the
+                // generation on every show; the reused content view never
+                // re-fires onAppear, so resets hang off this change
+                resetUpcomingPaginationAndLoadFirstPage()
             }
             .onReceive(eventService.$isAuthorized.dropFirst()) { _ in
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
@@ -286,6 +294,7 @@ struct RootPopoverView: View {
             hasMoreUpcomingFuture: upcomingFutureCursor != nil,
             upcomingDefaultExpanded: settingsStore.menuBarPreferences.upcomingDefaultExpanded,
             upcomingResetGeneration: upcomingResetGeneration,
+            upcomingPresentationGeneration: viewModel.popoverPresentationGeneration,
             selectedDate: viewModel.selectedDate,
             items: itemsForSelectedDate,
             selectedEventIdentifier: viewModel.selectedEventIdentifier,
@@ -343,7 +352,6 @@ struct RootPopoverView: View {
             onCreateEventAt: { timeRange in
                 handleCreateItem(initialTimeRange: timeRange)
             },
-            onResetUpcomingPagination: resetUpcomingPaginationAndLoadFirstPage,
             onLoadMoreUpcomingPast: handleLoadMoreUpcomingPast,
             onLoadMoreUpcomingFuture: handleLoadMoreUpcomingFuture,
             onOpenWeatherDetails: handleOpenWeatherDetails,
@@ -621,9 +629,10 @@ struct RootPopoverView: View {
     /// 重置分页状态并加载第一页：清空已加载条目、两端游标回到当天零点、
     /// 递增重置代数（分节据此把滚动位置拉回列表顶），然后从当天开始
     /// （含今天全天）加载未来方向第一页 10 条；过去方向初始 0 条，仅
-    /// 下拉过拉时加载。弹层每次打开由分节 onAppear 触发；授权/提醒授权/
-    /// 设置/store 变更与跨天的重取也统一走本方法（数据源变化后从第一页
-    /// 重新开始，语义可预期，推翻此前「窗口端点跨打开保留」的模型）。
+    /// 顶部入口行加载。弹层每次打开由弹层展示代数 onChange 触发（首次
+    /// 打开另有 onAppear 兜底）；授权/提醒授权/设置/store 变更与跨天的
+    /// 重取也统一走本方法（数据源变化后从第一页重新开始，语义可预期，
+    /// 推翻此前「窗口端点跨打开保留」的模型）。
     private func resetUpcomingPaginationAndLoadFirstPage() {
         let preferences = settingsStore.menuBarPreferences
 
@@ -812,8 +821,8 @@ struct RootPopoverView: View {
         }
     }
 
-    /// 下拉过拉触发：向过去加载一页（每页 10 条）。过去端已探明尽头
-    /// （游标 nil）或加载中时，页装配入口直接忽略触发。
+    /// 顶部「加载更早」入口行触发：向过去加载一页（每页 10 条）。过去端
+    /// 已探明尽头（游标 nil）或加载中时，页装配入口直接忽略触发。
     private func handleLoadMoreUpcomingPast() {
         loadUpcomingPage(direction: .past)
     }

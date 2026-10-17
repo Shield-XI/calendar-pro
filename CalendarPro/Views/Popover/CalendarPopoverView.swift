@@ -43,6 +43,9 @@ struct CalendarPopoverView: View {
     // 分页重置代数：每次弹层重置分页递增，「近期日程」分节据此把滚动
     // 位置显式拉回列表顶
     let upcomingResetGeneration: Int
+    // 弹层展示代数：PopoverController 每次 show 递增，分节据此在弹层
+    // 重开时按设置重置展开态（视图实例跨打开存活，onAppear 不可靠）
+    let upcomingPresentationGeneration: Int
     let selectedDate: Date?
     let items: [CalendarItem]
     let selectedEventIdentifier: String?
@@ -76,7 +79,6 @@ struct CalendarPopoverView: View {
     let onOpenReminder: (EKReminder) -> Void
     let onCreateItem: () -> Void
     let onCreateEventAt: (CalendarItemCreationTimeRange) -> Void
-    let onResetUpcomingPagination: () -> Void
     let onLoadMoreUpcomingPast: () -> Void
     let onLoadMoreUpcomingFuture: () -> Void
     let onOpenWeatherDetails: () -> Void
@@ -177,9 +179,9 @@ struct CalendarPopoverView: View {
                     hasMoreFuture: hasMoreUpcomingFuture,
                     defaultExpanded: upcomingDefaultExpanded,
                     resetGeneration: upcomingResetGeneration,
+                    presentationGeneration: upcomingPresentationGeneration,
                     timeRefreshCoordinator: timeRefreshCoordinator,
                     selectedEventIdentifier: selectedEventIdentifier,
-                    onResetPagination: onResetUpcomingPagination,
                     onLoadMorePast: onLoadMoreUpcomingPast,
                     onLoadMoreFuture: onLoadMoreUpcomingFuture,
                     onSelectEvent: onSelectEvent,

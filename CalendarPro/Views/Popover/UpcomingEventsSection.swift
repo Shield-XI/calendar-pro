@@ -132,27 +132,25 @@ struct UpcomingEventsSection: View {
     // 分页重置代数：RootPopoverView 每次重置分页递增，本节据此把滚动
     // 位置显式拉回列表顶（数据重置后滚动偏移会残留）
     let resetGeneration: Int
+    // 弹层展示代数：PopoverController 每次 show 递增，本节据此在弹层
+    // 重开时按设置重置展开态（视图实例跨打开存活，onAppear 不可靠）
+    let presentationGeneration: Int
     let timeRefreshCoordinator: TimeRefreshCoordinator
     let selectedEventIdentifier: String?
-    let onResetPagination: () -> Void
     let onLoadMorePast: () -> Void
     let onLoadMoreFuture: () -> Void
     let onSelectEvent: (EKEvent) -> Void
     let onOpenReminder: (EKReminder) -> Void
     let onToggleReminder: (EKReminder) -> Void
 
-    // 折叠状态只记在视图内：初始展开态读「默认展开版块」设置；弹层重开
-    // 时视图实例存活（PopoverController 复用内容视图控制器），State 的
-    // 初始值只在首次创建时生效，因此在 body 的 onAppear（内容视图重新
-    // 挂载即触发）按设置重置展开态——弹层每次打开取设置初值，打开期间
-    // 手动折叠不会触发 onAppear，即时生效且不被复位，不持久化
+    // Expansion state lives in the view: initialized from the default-expanded
+    // setting and re-applied on every popover presentation generation bump
+    // (view instances survive popover reuse, so State initial values only
+    // apply on first creation)
     @State private var isExpanded: Bool
 
-    /// 显式初始化器：入参由 CalendarPopoverView 透传（数据与回调来自
-    /// RootPopoverView 与用户设置），defaultExpanded 来自「默认展开版块」
-    /// 设置，作为折叠态的初始值。
-    /// 副作用：以 defaultExpanded 初始化 @State isExpanded；展开态最终
-    /// 以 body onAppear 按该值重置的结果为准（见上方状态注释）。
+    /// Explicit initializer: inputs are passed through CalendarPopoverView;
+    /// `defaultExpanded` seeds the collapse state.
     init(
         items: [CalendarItem],
         isLoadingPast: Bool,
@@ -161,9 +159,9 @@ struct UpcomingEventsSection: View {
         hasMoreFuture: Bool,
         defaultExpanded: Bool,
         resetGeneration: Int,
+        presentationGeneration: Int,
         timeRefreshCoordinator: TimeRefreshCoordinator,
         selectedEventIdentifier: String?,
-        onResetPagination: @escaping () -> Void,
         onLoadMorePast: @escaping () -> Void,
         onLoadMoreFuture: @escaping () -> Void,
         onSelectEvent: @escaping (EKEvent) -> Void,
@@ -177,9 +175,9 @@ struct UpcomingEventsSection: View {
         self.hasMoreFuture = hasMoreFuture
         self.defaultExpanded = defaultExpanded
         self.resetGeneration = resetGeneration
+        self.presentationGeneration = presentationGeneration
         self.timeRefreshCoordinator = timeRefreshCoordinator
         self.selectedEventIdentifier = selectedEventIdentifier
-        self.onResetPagination = onResetPagination
         self.onLoadMorePast = onLoadMorePast
         self.onLoadMoreFuture = onLoadMoreFuture
         self.onSelectEvent = onSelectEvent
@@ -205,13 +203,12 @@ struct UpcomingEventsSection: View {
                     .frame(maxHeight: Metrics.expandedMaxHeight)
             }
         }
-        // 弹层每次打开内容视图重新挂载会再次触发 onAppear：按当前设置
-        // 重置展开态并重置分页（先重置分页状态再触发第一页装载，均由
-        // onResetPagination 回调在 RootPopoverView 内一次完成），滚动
-        // 位置由 resetGeneration 变化后的显式 scrollTo 拉回列表顶
-        .onAppear {
+        // Popover reopen: re-apply the default-expanded setting via the
+        // presentation generation (view instances survive popover reuse);
+        // pagination resets arrive through RootPopoverView and reach this
+        // view as resetGeneration changes
+        .onChange(of: presentationGeneration) { _, _ in
             isExpanded = defaultExpanded
-            onResetPagination()
         }
     }
 

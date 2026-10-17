@@ -243,6 +243,10 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         timeRefreshCoordinator.refreshNow()
         viewModel.checkAndResetIfNeeded()
         viewModel.syncCurrentDaySelectionIfNeeded(calendar: .autoupdatingCurrent)
+        // Explicit reopen signal: the content view controller is reused across
+        // presentations, so SwiftUI onAppear does not reliably re-fire and
+        // reopen resets are driven by this generation bump instead.
+        viewModel.markPopoverPresented()
         applyScreenHeightLimit(relativeTo: button)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         interactionMonitor.start { [weak self] in
