@@ -60,7 +60,6 @@ struct RootPopoverView: View {
     @State private var weatherDetailTask: Task<Void, Never>?
     @State private var weatherRequestID = UUID()
     @State private var weatherDetailRequestID = UUID()
-    /// 完成保留显示到期后的延时重取任务；同一时刻仅保留一个，旧任务先取消。
     @State private var boardRetentionRefreshTask: Task<Void, Never>?
     @State private var lastWeatherRefreshTime: Date?
     @State private var lastWeatherRequestedDate: Date?
@@ -115,7 +114,7 @@ struct RootPopoverView: View {
                 viewModel.syncCurrentDaySelectionIfNeeded(calendar: displayCalendar)
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
                 refreshInfoStrips()
-                // 跨天后逾期/时间分段颜色与到期文案需要重算。
+                // Day change: overdue colors and due texts must be recomputed.
                 loadBoard()
             }
             .onDisappear {
@@ -515,17 +514,15 @@ struct RootPopoverView: View {
         do {
             try eventService.toggleReminderCompletion(reminder)
             refreshEventsForCurrentSelection()
-            // 看板行与事件列表共用该勾选入口，完成后同步刷新看板计数与状态。
+            // Shared toggle entry with the event list; keep the board in sync.
             loadBoard()
         } catch {
             print("Failed to toggle reminder completion: \(error)")
         }
     }
 
-    /// 拉取看板提醒数据；关闭看板或未授权时清空。
-    /// 仿 loadEvents 模式：取数前快照偏好，落地前按当前开关校验，避免过期数据回写。
-    /// 未开启「显示已完成」且设置了保留时长时，取数附带保留窗口内的已完成提醒，
-    /// 让刚完成的行在窗口期内保留展示；窗口到期后由 scheduleBoardRetentionRefresh 重取移除。
+    /// Loads board reminders; when show-completed is off, completed rows inside
+    /// the retention window are kept visible until a delayed refresh removes them.
     private func loadBoard() {
         let preferences = settingsStore.menuBarPreferences
 
@@ -537,7 +534,8 @@ struct RootPopoverView: View {
         let enabledCalendarIDs = preferences.boardEnabledReminderCalendarIDs
         let includeCompleted = preferences.boardShowCompleted
         let retentionSeconds = preferences.boardCompletedRetentionSeconds
-        // 显示已完成取全量；仅保留显示时按完成时间窗口截断，避免拉取全部历史已完成。
+        // A window start avoids pulling the full completed history when only
+        // the retention window matters.
         let recentCompletedWindowStart = includeCompleted || retentionSeconds <= 0
             ? nil
             : Date().addingTimeInterval(-Double(retentionSeconds))
@@ -549,7 +547,8 @@ struct RootPopoverView: View {
                 recentCompletedWindowStart: recentCompletedWindowStart
             )
             await MainActor.run {
-                // 仿 loadEvents 的过期校验：取数期间偏好变化则丢弃本次结果，等待下一次触发。
+                // Discard the result when preferences changed during the fetch;
+                // the change itself re-triggers a load.
                 let currentPreferences = settingsStore.menuBarPreferences
                 guard currentPreferences.showRemindersBoard,
                       currentPreferences.boardEnabledReminderCalendarIDs == enabledCalendarIDs,
@@ -562,9 +561,9 @@ struct RootPopoverView: View {
         }
     }
 
-    /// 完成保留显示到期后安排一次看板重取，让保留行按时消失。
-    /// 锚点统一放在 loadBoard 落地后：勾选完成、外部改动、弹层重开都经过这里，
-    /// 按窗口内最早完成时间计算剩余时长；旧任务先取消，多次完成不堆积。
+    /// Schedules one board reload when the retention window expires so kept
+    /// rows disappear on time; only the earliest in-window completion matters
+    /// and any previous task is cancelled first.
     private func scheduleBoardRetentionRefresh(after reminders: [EKReminder]) {
         boardRetentionRefreshTask?.cancel()
 
@@ -588,7 +587,7 @@ struct RootPopoverView: View {
             do {
                 try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
             } catch {
-                // 被下一次调度取消时静默退出，由新任务接管。
+                // Cancelled by a newer schedule; the new task takes over.
                 return
             }
             loadBoard()

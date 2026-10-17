@@ -1,15 +1,7 @@
 import Foundation
 
-// 文件头：
-// 职责：定义提醒事项看板的颜色偏好模型（hex 存储）、颜色键与预设方案。
-// 入口：MenuBarPreferences.boardColorPreferences / boardColorPreset 引用。
-// 输入来源：用户在设置页的配色方案选择与逐色修改。
-// 输出：Codable 结构随 MenuBarPreferences 持久化到 UserDefaults。
-// 依赖：Foundation（纯值类型，不依赖 UI）。
-// 副作用：无。
-
-/// 提醒事项看板颜色偏好：全部颜色以 "#RRGGBB" hex 字符串存储，
-/// 便于 Codable 持久化与纯函数测试；颜色解析失败时由 UI 层回退灰色。
+/// Board color preferences stored as "#RRGGBB" hex strings for Codable
+/// persistence; the UI falls back to gray when a value fails to parse.
 struct BoardColorPreferences: Codable, Equatable, Hashable {
     var overdue: String
     var notOverdue: String
@@ -24,7 +16,7 @@ struct BoardColorPreferences: Codable, Equatable, Hashable {
     var priorityNone: String
     var completed: String
 
-    /// 经典配色（默认值）：逾期红、今天橙、本周蓝、无日期灰、高红中橙低蓝。
+    /// Classic palette (the default).
     static let classic = BoardColorPreferences(
         overdue: "#DC2626",
         notOverdue: "#2563EB",
@@ -40,7 +32,6 @@ struct BoardColorPreferences: Codable, Equatable, Hashable {
         completed: "#9CA3AF"
     )
 
-    /// 读取指定颜色键的 hex 值。
     func colorHex(for key: BoardColorKey) -> String {
         switch key {
         case .overdue: return overdue
@@ -58,7 +49,6 @@ struct BoardColorPreferences: Codable, Equatable, Hashable {
         }
     }
 
-    /// 写入指定颜色键的 hex 值（preset 转 custom 由 SettingsStore 统一处理）。
     mutating func setColorHex(_ hex: String, for key: BoardColorKey) {
         switch key {
         case .overdue: overdue = hex
@@ -77,7 +67,7 @@ struct BoardColorPreferences: Codable, Equatable, Hashable {
     }
 }
 
-/// 看板颜色键：设置页逐色修改时定位具体颜色；改动任意一键即转为 custom 预设。
+/// Key identifying one board color in the settings color grid.
 enum BoardColorKey: String, CaseIterable, Identifiable {
     case overdue
     case notOverdue
@@ -112,9 +102,8 @@ enum BoardColorKey: String, CaseIterable, Identifiable {
     }
 }
 
-/// 看板配色预设：选中即整套套用颜色；用户改动任意一色后自动转 custom。
-/// 各套语义保持一致：逾期红系、今天橙系、本周蓝系、无日期灰系、
-/// 优先级高红/中橙/低蓝/无灰、已完成灰。
+/// Board color preset: picking one applies the whole palette; editing any
+/// single color switches the preset to custom.
 enum BoardColorPreset: String, Codable, CaseIterable, Identifiable {
     case classic
     case warm
@@ -134,7 +123,7 @@ enum BoardColorPreset: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    /// 预设对应的完整颜色方案；custom 无预设值，保留用户已改的颜色。
+    /// Full palette for the preset; nil for custom, which keeps current colors.
     var colorPreferences: BoardColorPreferences? {
         switch self {
         case .classic:

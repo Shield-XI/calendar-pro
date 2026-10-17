@@ -405,7 +405,7 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
-    /// 设置是否在弹层中显示提醒事项看板分节。
+    /// Toggles the reminders board section in the popover.
     func setShowRemindersBoard(_ enabled: Bool) {
         var prefs = menuBarPreferences
         prefs.showRemindersBoard = enabled
@@ -413,7 +413,7 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
-    /// 设置看板启用的提醒列表；归一语义与 setReminderCalendarEnabled 一致（空数组=全选）。
+    /// Toggles one reminder list for the board; an empty ID array means all selected.
     func setBoardReminderCalendarEnabled(
         _ enabled: Bool,
         calendarID: String,
@@ -446,7 +446,7 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
-    /// 设置看板分组模式（按列表或按优先级）。
+    /// Sets the board grouping mode.
     func setBoardGroupingMode(_ mode: RemindersBoardGroupingMode) {
         var prefs = menuBarPreferences
         prefs.boardGroupingMode = mode
@@ -454,7 +454,7 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
-    /// 设置看板是否显示已完成提醒。
+    /// Sets whether the board shows completed reminders.
     func setBoardShowCompleted(_ enabled: Bool) {
         var prefs = menuBarPreferences
         prefs.boardShowCompleted = enabled
@@ -462,7 +462,7 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
-    /// 设置看板完成后保留显示时长（秒，0 表示完成后立即隐藏）。
+    /// Sets the completed-row retention window in seconds (0 hides immediately).
     func setBoardCompletedRetentionSeconds(_ seconds: Int) {
         var prefs = menuBarPreferences
         prefs.boardCompletedRetentionSeconds = seconds
@@ -470,7 +470,7 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
-    /// 设置看板颜色模式（逾期双色或时间分段）。
+    /// Sets the board color mode.
     func setBoardColorMode(_ mode: RemindersBoardColorMode) {
         var prefs = menuBarPreferences
         prefs.boardColorMode = mode
@@ -478,7 +478,7 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
-    /// 套用配色预设：经典/暖色/冷色/高对比度会整体覆盖颜色，custom 仅改标记保留现值。
+    /// Applies a color preset; custom only flips the flag and keeps current colors.
     func setBoardColorPreset(_ preset: BoardColorPreset) {
         var prefs = menuBarPreferences
         prefs.boardColorPreset = preset
@@ -489,7 +489,7 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
-    /// 逐色修改看板颜色：任意一色被改动后预设自动转为 custom，已改值持久化。
+    /// Sets one board color; any edit flips the preset to custom.
     func setBoardColorHex(_ colorHex: String, for key: BoardColorKey) {
         var prefs = menuBarPreferences
         prefs.boardColorPreferences.setColorHex(colorHex, for: key)

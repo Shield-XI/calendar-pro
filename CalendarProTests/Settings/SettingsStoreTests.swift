@@ -473,7 +473,6 @@ final class SettingsStoreTests: XCTestCase {
             store.menuBarPreferences.boardColorPreferences.colorHex(for: .overdue),
             "#123456"
         )
-        // 其余颜色保留预设值，只改动目标键。
         XCTAssertEqual(
             store.menuBarPreferences.boardColorPreferences.colorHex(for: .today),
             BoardColorPreset.cool.colorPreferences?.colorHex(for: .today)
@@ -490,7 +489,6 @@ final class SettingsStoreTests: XCTestCase {
     func testMenuBarPreferencesDecodeFillsBoardDefaultsForLegacyData() throws {
         let suiteName = #function
         let userDefaults = makeIsolatedUserDefaults(name: suiteName)
-        // 旧版编码数据不含任何看板字段，验证解码时全部补默认值。
         let legacyJSON = """
         {
           "tokens": [

@@ -2,16 +2,6 @@ import XCTest
 import EventKit
 @testable import CalendarPro
 
-// 文件头：
-// 职责：验证提醒事项看板纯函数布局——优先级映射、两种分组、组内排序、
-//       时间桶边界、颜色解析（逾期双色/时间分段/无日期/已完成）、
-//       完成保留窗口（保留期内显示并标记待隐藏/超期与零窗口隐藏）与预设方案。
-// 入口：xcodebuild test（CalendarProTests scheme）。
-// 输入来源：测试内构造的 EKReminder（GMT 固定日期与优先级）。
-// 输出：XCTest 断言结果。
-// 依赖：EventKit（构造 EKReminder/EKCalendar）、BoardSnapshot 纯函数。
-// 副作用：无（不读写 EventKit 真实数据库）。
-
 final class BoardSnapshotTests: XCTestCase {
     private let calendar = BoardSnapshotTests.makeCalendar()
 
@@ -21,7 +11,6 @@ final class BoardSnapshotTests: XCTestCase {
         return calendar
     }
 
-    /// 参考当前时间：2026-10-16 12:00 GMT。
     private var now: Date {
         calendar.date(from: DateComponents(year: 2026, month: 10, day: 16, hour: 12))!
     }
@@ -47,8 +36,8 @@ final class BoardSnapshotTests: XCTestCase {
         reminder.title = title
         reminder.priority = priority
         reminder.isCompleted = isCompleted
-        // 仅显式给值时才设置 completionDate：EventKit 中 completionDate 与
-        // isCompleted 强联动（赋 nil 会把 isCompleted 翻回 false），不能用来清空。
+        // Only assign completionDate when explicitly given: in EventKit it is
+        // coupled with isCompleted (assigning nil flips isCompleted back to false).
         if let completedAt {
             reminder.completionDate = completedAt
         }
@@ -85,7 +74,7 @@ final class BoardSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - 优先级映射
+    // MARK: - Priority mapping
 
     func testPriorityMappingCoversEKPriorityRanges() {
         XCTAssertEqual(ReminderBoardPriority(ekPriority: 0), .none)
@@ -99,7 +88,7 @@ final class BoardSnapshotTests: XCTestCase {
         XCTAssertEqual(ReminderBoardPriority(ekPriority: -1), .none)
     }
 
-    // MARK: - 分组
+    // MARK: - Grouping
 
     func testGroupingByListUsesListNameAndSortsGroupsByName() {
         let snapshot = makeSnapshot([
@@ -127,7 +116,6 @@ final class BoardSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.groups[0].rows.map(\.title), ["high-task"])
         XCTAssertEqual(snapshot.groups[3].rows.map(\.title), ["none-task"])
 
-        // 只有高优先级时其余档位不产生空组。
         let single = makeSnapshot(
             [makeReminder(title: "high-task", priority: 1)],
             groupingMode: .priority
@@ -135,7 +123,7 @@ final class BoardSnapshotTests: XCTestCase {
         XCTAssertEqual(single.groups.count, 1)
     }
 
-    // MARK: - 组内排序
+    // MARK: - Row sorting
 
     func testRowsSortByDueDateWithNoDateLastThenTitle() {
         let snapshot = makeSnapshot([
@@ -153,7 +141,7 @@ final class BoardSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - 时间桶
+    // MARK: - Time buckets
 
     func testTimeBucketBoundaries() {
         let cases: [(due: Date?, expected: ReminderBoardTimeBucket)] = [
@@ -169,12 +157,12 @@ final class BoardSnapshotTests: XCTestCase {
             XCTAssertEqual(
                 ReminderBoardTimeBucket.resolve(dueDate: due, now: now, calendar: calendar),
                 expected,
-                "due \(String(describing: due)) 应解析为 \(expected)"
+                "due \(String(describing: due)) should resolve to \(expected)"
             )
         }
     }
 
-    // MARK: - 颜色解析
+    // MARK: - Color resolution
 
     func testOverdueColorModeResolvesTwoColors() {
         let rows = makeSnapshot(
@@ -233,7 +221,6 @@ final class BoardSnapshotTests: XCTestCase {
                 .groups[0].rows
             XCTAssertEqual(visible.count, 3)
 
-            // 已完成恒用 completed 色：任务行标题/勾选图标/到期标签共用该值着色。
             let done = visible.first { $0.title == "done" }
             XCTAssertEqual(done?.colorHex, BoardColorPreferences.classic.completed)
             XCTAssertTrue(done?.isCompleted ?? false)
@@ -242,7 +229,8 @@ final class BoardSnapshotTests: XCTestCase {
             XCTAssertEqual(doneNoDate?.colorHex, BoardColorPreferences.classic.completed)
         }
 
-        // completed 优先于无日期色：用两者取值不同的调色板验证已完成且无日期不给 noDate 色。
+        // Distinct noDate palette proves a completed no-date row gets the
+        // completed color rather than the no-date one.
         var distinctPalette = BoardColorPreferences.classic
         distinctPalette.noDate = "#00FF00"
 
@@ -273,7 +261,7 @@ final class BoardSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.incompleteCount, 2)
     }
 
-    // MARK: - 完成保留窗口
+    // MARK: - Completed retention window
 
     func testCompletedRowsFilterByRetentionWindowAndFlagPendingHide() {
         let snapshot = makeSnapshot(
@@ -297,10 +285,9 @@ final class BoardSnapshotTests: XCTestCase {
             retentionSeconds: 3
         )
 
-        // 窗口判定为严格大于：边界（恰好等于 now - retentionSeconds）与超期都不保留，
-        // 仅窗口内的行保留展示并标记待隐藏。
-        // 注：isCompleted=true 且 completionDate=nil（他端完成后未回写时间）无法在
-        // 内存中构造，模型里的空值兜底分支（视为不保留）靠代码评审保证。
+        // Strict boundary: a row completed exactly at now - retentionSeconds
+        // is dropped. The completed-without-completionDate branch cannot be
+        // built in memory (EventKit couples the two), so it has no test here.
         XCTAssertEqual(snapshot.groups[0].rows.map(\.title), ["fresh"])
         XCTAssertTrue(snapshot.groups[0].rows[0].isPendingHide)
         XCTAssertEqual(snapshot.incompleteCount, 0)
@@ -318,7 +305,6 @@ final class BoardSnapshotTests: XCTestCase {
             retentionSeconds: 0
         )
 
-        // 旧行为：retentionSeconds 为 0 时完成后立即隐藏（整行被过滤，分组为空）。
         XCTAssertTrue(snapshot.groups.isEmpty)
     }
 
@@ -340,7 +326,6 @@ final class BoardSnapshotTests: XCTestCase {
             retentionSeconds: 3
         )
 
-        // 显示已完成模式全部常驻显示，无待隐藏标志、无闪烁。
         XCTAssertEqual(snapshot.groups[0].rows.map(\.title), ["fresh", "old"])
         XCTAssertFalse(snapshot.groups[0].rows.contains { $0.isPendingHide })
     }
@@ -358,23 +343,25 @@ final class BoardSnapshotTests: XCTestCase {
             retentionSeconds: 3
         )
 
-        // 未完成行不受保留窗口影响；窗口内的已完成行按预期保留。
         XCTAssertEqual(snapshot.groups[0].rows.map(\.title), ["todo", "done"])
         XCTAssertFalse(snapshot.groups[0].rows[0].isPendingHide)
         XCTAssertTrue(snapshot.groups[0].rows[1].isPendingHide)
     }
 
-    // MARK: - 预设方案
+    // MARK: - Preset palettes
 
     func testPresetPalettesAreCompleteAndCustomHasNoPalette() {
         for preset in [BoardColorPreset.classic, .warm, .cool, .highContrast] {
             guard let palette = preset.colorPreferences else {
-                XCTFail("\(preset) 应提供完整配色")
+                XCTFail("\(preset) should provide a full palette")
                 continue
             }
 
             for key in BoardColorKey.allCases {
-                XCTAssertTrue(palette.colorHex(for: key).hasPrefix("#"), "\(preset).\(key) 应为 hex")
+                XCTAssertTrue(
+                    palette.colorHex(for: key).hasPrefix("#"),
+                    "\(preset).\(key) should be hex"
+                )
             }
         }
 
@@ -384,6 +371,6 @@ final class BoardSnapshotTests: XCTestCase {
     func testPresetPalettesAreDistinct() {
         let palettes = [BoardColorPreset.classic, .warm, .cool, .highContrast]
             .compactMap(\.colorPreferences)
-        XCTAssertEqual(Set(palettes).count, 4, "各预设配色应互不相同")
+        XCTAssertEqual(Set(palettes).count, 4, "preset palettes should be distinct")
     }
 }

@@ -179,7 +179,8 @@ struct MenuBarPreferences: Codable, Equatable {
     var boardEnabledReminderCalendarIDs: [String] = []
     var boardGroupingMode: RemindersBoardGroupingMode = .list
     var boardShowCompleted: Bool = false
-    /// 完成后保留显示秒数；0 表示完成后立即隐藏，旧数据缺失该键时走默认 3。
+    /// Seconds a completed row stays visible; 0 hides immediately.
+    /// Legacy data missing this key decodes to the default of 3.
     var boardCompletedRetentionSeconds: Int = 3
     var boardColorMode: RemindersBoardColorMode = .overdue
     var boardColorPreferences: BoardColorPreferences = .classic

@@ -261,9 +261,8 @@ final class EventService: ObservableObject {
         return result
     }
     
-    /// 拉取看板提醒。includeCompleted 为 true 时合并全部已完成提醒；
-    /// 为 false 且 recentCompletedWindowStart 非 nil 时，仅合并完成时间晚于该起点的
-    /// 已完成提醒（供「完成后保留显示」窗口使用），否则只返回未完成提醒。
+    /// Fetches board reminders, optionally merging completed items
+    /// (all of them, or only those completed after the given window start).
     func fetchBoardReminders(
         enabledCalendarIDs: [String],
         includeCompleted: Bool,
@@ -282,8 +281,8 @@ final class EventService: ObservableObject {
 
         let store = eventStore
 
-        // 不限日期取全部未完成提醒：起始与结束都传 nil，
-        // 与 fetchReminders 双查询思路一致，但看板需要全量而非单日窗口。
+        // nil start/end fetches every incomplete reminder; the board needs the
+        // full set, not a single-day window.
         let incompletePredicate = eventStore.predicateForIncompleteReminders(
             withDueDateStarting: nil,
             ending: nil,
@@ -300,8 +299,6 @@ final class EventService: ObservableObject {
 
         guard includeCompleted || recentCompletedWindowStart != nil else { return incomplete }
 
-        // 需要已完成提醒时再发起完成态查询（显示已完成取全量，保留显示按窗口截断），
-        // 并按唯一标识去重合并。
         let completedPredicate = eventStore.predicateForCompletedReminders(
             withCompletionDateStarting: includeCompleted ? nil : recentCompletedWindowStart,
             ending: nil,

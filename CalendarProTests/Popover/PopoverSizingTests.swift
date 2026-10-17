@@ -2,18 +2,9 @@ import SwiftUI
 import XCTest
 @testable import CalendarPro
 
-// 文件头：
-// 职责：验证弹层尺寸约束纯函数——按钮下方可用高度计算、内容尺寸 clamp、
-//       异常布局的保底高度，以及宿主控制器对 preferredContentSize 的高度钳制。
-// 入口：xcodebuild test（CalendarProTests scheme）。
-// 输入来源：测试内构造的屏幕 frame（状态栏按钮屏幕坐标与 visibleFrame）。
-// 输出：XCTest 断言结果。
-// 依赖：PopoverSizing 纯函数、PopoverSizingHostingController、SwiftUI。
-// 副作用：无（不创建真实弹层窗口，不依赖显示器布局）。
-
 @MainActor
 final class PopoverSizingTests: XCTestCase {
-    // 典型菜单栏场景：屏幕 1440x900、菜单栏 25pt，状态栏按钮底缘 y=850。
+    // Typical menu bar: 1440x900 screen, 25pt menu bar, button bottom at y=850.
     private let buttonFrameInScreen = NSRect(x: 1200, y: 850, width: 44, height: 25)
     private let visibleFrame = NSRect(x: 0, y: 0, width: 1440, height: 875)
 

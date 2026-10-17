@@ -3,18 +3,7 @@ import EventKit
 import Foundation
 import SwiftUI
 
-// 文件头：
-// 职责：提醒事项看板的纯函数展示模型——分组模式与颜色模式枚举、
-//       EKReminder.priority 到优先级档的映射、到期时间桶解析、
-//       BoardSnapshot 分组/排序/着色布局，以及 hex 颜色互转辅助。
-// 入口：BoardSnapshot.make(reminders:now:calendar:groupingMode:colorMode:
-//       colorPreferences:showCompleted:retentionSeconds:)。
-// 输入来源：EventService.fetchBoardReminders 返回的 EKReminder 与 MenuBarPreferences 看板字段。
-// 输出：BoardSnapshot（分组 + 行展示态 + 未完成总数），供 RemindersBoardSection 渲染与单元测试断言。
-// 依赖：EventKit（仅读取 EKReminder/EKCalendar 属性）、AppKit/SwiftUI（NSColor/Color 十六进制转换）。
-// 副作用：无（纯函数，不做任何存储或网络操作）。
-
-/// 看板分组模式：按提醒列表或按优先级档。
+/// Board grouping mode: by reminder list or by priority tier.
 enum RemindersBoardGroupingMode: String, Codable, CaseIterable, Identifiable {
     case list
     case priority
@@ -29,7 +18,7 @@ enum RemindersBoardGroupingMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// 看板颜色模式：逾期/未逾期双色，或按到期时间分段着色。
+/// Board color mode: overdue/not-overdue duo, or per-time-bucket colors.
 enum RemindersBoardColorMode: String, Codable, CaseIterable, Identifiable {
     case overdue
     case timeBucket
@@ -44,8 +33,8 @@ enum RemindersBoardColorMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// 提醒事项优先级档：映射 EKReminder.priority（0 无；1-3 高；4-6 中；7-9 低）。
-/// rawValue 即分组展示顺序（高在前，无优先级靠后）。
+/// Priority tier mapped from EKReminder.priority (0 none; 1-3 high; 4-6 medium;
+/// 7-9 low). rawValue doubles as the group display order: high first, none last.
 enum ReminderBoardPriority: Int, Codable, CaseIterable, Identifiable {
     case high = 0
     case medium = 1
@@ -54,7 +43,6 @@ enum ReminderBoardPriority: Int, Codable, CaseIterable, Identifiable {
 
     var id: Int { rawValue }
 
-    /// 纯函数映射，便于单元测试覆盖各优先级区间。
     init(ekPriority: Int) {
         switch ekPriority {
         case 1...3: self = .high
@@ -75,13 +63,13 @@ enum ReminderBoardPriority: Int, Codable, CaseIterable, Identifiable {
 }
 
 extension EKReminder {
-    /// 当前提醒的优先级档（看板展示用）。
     var boardPriority: ReminderBoardPriority {
         ReminderBoardPriority(ekPriority: priority)
     }
 }
 
-/// 到期时间桶：过去（今天零点前）、今天、本周（今天起 7 天内）、更晚、无日期。
+/// Due-time bucket: past (before today), today, this week (within 7 days of
+/// today's start), later, or no date.
 enum ReminderBoardTimeBucket: Equatable {
     case past
     case today
@@ -89,11 +77,6 @@ enum ReminderBoardTimeBucket: Equatable {
     case later
     case none
 
-    /// 纯函数解析：以 now 所在自然日零点为界比较 dueDate 所在自然日。
-    /// - Parameters:
-    ///   - dueDate: 到期日期；nil 表示无日期，返回 .none
-    ///   - now: 参考当前时间（来源：TimeRefreshCoordinator.currentDate）
-    ///   - calendar: 用于自然日与零点计算的日历（测试注入 GMT 固定日历）
     static func resolve(
         dueDate: Date?,
         now: Date,
@@ -111,7 +94,7 @@ enum ReminderBoardTimeBucket: Equatable {
             return .today
         }
 
-        // 本周窗口：今天零点起 7 天内（不含第 8 天零点及以后）。
+        // Week window: 7 days starting at today's midnight, exclusive of day 8.
         guard let weekEnd = calendar.date(byAdding: .day, value: 7, to: dayStart) else {
             return .later
         }
@@ -119,7 +102,7 @@ enum ReminderBoardTimeBucket: Equatable {
     }
 }
 
-/// 看板单行展示态：由 EKReminder 派生的纯值，颜色已按偏好解析为 hex。
+/// Display-ready board row derived from an EKReminder, colors resolved to hex.
 struct RemindersBoardRow: Identifiable, Equatable {
     let id: String
     let title: String
@@ -131,12 +114,13 @@ struct RemindersBoardRow: Identifiable, Equatable {
     let priority: ReminderBoardPriority
     let bucket: ReminderBoardTimeBucket
     let colorHex: String
-    /// 完成保留期内待隐藏：未开启显示已完成时，完成时间仍在保留窗口内的行；
-    /// 该标志驱动勾选框闪烁，窗口到期后由延时刷新移除行。
+    /// True while a just-completed row is inside the retention window: the
+    /// checkbox blinks until a delayed refresh removes the row.
     let isPendingHide: Bool
 }
 
-/// 看板分组：标题与组头颜色由分组模式决定（列表名+列表色，或优先级档+优先级色）。
+/// Board group; title and header color follow the grouping mode
+/// (list name with list color, or priority tier with priority color).
 struct BoardSnapshotGroup: Identifiable, Equatable {
     let id: String
     let title: String
@@ -144,24 +128,12 @@ struct BoardSnapshotGroup: Identifiable, Equatable {
     let rows: [RemindersBoardRow]
 }
 
-/// 看板布局快照：分组结果与未完成总数。
+/// Board layout snapshot: grouped rows plus the incomplete count.
 struct BoardSnapshot: Equatable {
     let groups: [BoardSnapshotGroup]
     let incompleteCount: Int
 
-    /// 纯函数构建看板快照。
-    /// - Parameters:
-    ///   - reminders: 待展示的提醒事项（来源：EventService.fetchBoardReminders）
-    ///   - now: 参考当前时间，用于时间桶解析与完成保留窗口判定
-    ///   - calendar: 自然日计算所用日历（默认当前日历，测试可注入 GMT 日历）
-    ///   - groupingMode: 分组模式（按列表/按优先级）
-    ///   - colorMode: 颜色模式（逾期双色/时间分段）
-    ///   - colorPreferences: 看板颜色偏好（hex 值集）
-    ///   - showCompleted: 是否包含已完成提醒；true 时全部常驻显示
-    ///   - retentionSeconds: 完成后保留显示秒数；仅在 showCompleted 为 false 时生效，
-    ///     完成时间落在 now 往前该窗口内的已完成行保留展示并标记待隐藏，
-    ///     0（或超期）时立即过滤（旧行为）
-    /// - Returns: 排序、着色完成后的快照；异常数据（无日历/无标题）给默认兜底文案
+    /// Builds the grouped, sorted and colored snapshot for the given reminders.
     static func make(
         reminders: [EKReminder],
         now: Date,
@@ -209,10 +181,8 @@ struct BoardSnapshot: Equatable {
         return BoardSnapshot(groups: groups, incompleteCount: incompleteCount)
     }
 
-    // MARK: - 行构建
+    // MARK: - Row building
 
-    /// 完成保留窗口判定：完成时间严格晚于 now 往前 retentionSeconds 秒即视为保留期内。
-    /// retentionSeconds <= 0 或缺失完成时间（completionDate 为 nil）时不保留。
     private static func isWithinRetentionWindow(
         _ reminder: EKReminder,
         now: Date,
@@ -240,8 +210,6 @@ struct BoardSnapshot: Equatable {
         let bucket = ReminderBoardTimeBucket.resolve(dueDate: dueDate, now: now, calendar: calendar)
         let identifier = reminder.calendarItemIdentifier
         let fallbackIdentifier = "unsaved-\(reminder.title ?? "")-\(dueDate?.timeIntervalSinceReferenceDate ?? 0)"
-        // 仅「未开启显示已完成 + 保留期内」的已完成行标记待隐藏（驱动勾选框闪烁）；
-        // 显示已完成模式下全部常驻，无待隐藏态。
         let isPendingHide = !showCompleted
             && reminder.isCompleted
             && isWithinRetentionWindow(reminder, now: now, retentionSeconds: retentionSeconds)
@@ -266,8 +234,6 @@ struct BoardSnapshot: Equatable {
         )
     }
 
-    /// 着色规则：已完成恒用 completed 色；无日期恒用 noDate 色；
-    /// 其余按颜色模式取逾期双色或时间分段色。
     private static func resolveColorHex(
         isCompleted: Bool,
         bucket: ReminderBoardTimeBucket,
@@ -295,9 +261,8 @@ struct BoardSnapshot: Equatable {
         }
     }
 
-    // MARK: - 排序与分组
+    // MARK: - Sorting and grouping
 
-    /// 组内排序：有到期时间者按时间升序在前，无日期者靠后，同档按标题。
     private static func makeRowComparator(calendar: Calendar)
     -> (RemindersBoardRow, RemindersBoardRow) -> Bool {
         { lhs, rhs in
@@ -317,7 +282,6 @@ struct BoardSnapshot: Equatable {
         }
     }
 
-    /// 按提醒列表名分组，组按名称排序；组头用列表色。
     private static func listGroups(from rows: [RemindersBoardRow]) -> [BoardSnapshotGroup] {
         let grouped = Dictionary(grouping: rows, by: \.listName)
         return grouped
@@ -332,7 +296,6 @@ struct BoardSnapshot: Equatable {
             }
     }
 
-    /// 按优先级档分组（高/中/低/无顺序），跳过空组；组头用对应优先级色。
     private static func priorityGroups(
         from rows: [RemindersBoardRow],
         colorPreferences: BoardColorPreferences
@@ -358,14 +321,13 @@ struct BoardSnapshot: Equatable {
         }
     }
 
-    // MARK: - 展示辅助
+    // MARK: - Display helpers
 
-    /// 到期格式器缓存（键=是否含时刻+语言标识）；DateFormatter 创建开销大，按需缓存。
-    /// UI 主线程与测试均会调用，用锁保护；语言切换后键变化会新建，不依赖失效逻辑。
+    // Formatters are cached by (includesTime, locale): DateFormatter creation
+    // is expensive, and the lock guards the cache from tests off the main thread.
     private nonisolated(unsafe) static var dueTextFormatters: [String: DateFormatter] = [:]
     private static let dueTextFormattersLock = NSLock()
 
-    /// 到期文案：带时刻用 "M月d日 HH:mm" 模板，纯日期用 "M月d日" 模板（随本地化）。
     private static func dueText(for date: Date, includesTime: Bool) -> String {
         let locale = AppLocalization.locale
         let key = "\(includesTime)-\(locale.identifier)"
@@ -384,7 +346,7 @@ struct BoardSnapshot: Equatable {
         return formatter.string(from: date)
     }
 
-    /// NSColor 转 "#RRGGBB" hex（统一转 sRGB）；无法解析时回退中性灰。
+    /// Converts to "#RRGGBB" in sRGB; falls back to neutral gray otherwise.
     static func hexString(from color: NSColor?) -> String {
         guard let srgb = color?.usingColorSpace(.sRGB) else {
             return "#8E8E93"
@@ -398,7 +360,8 @@ struct BoardSnapshot: Equatable {
 }
 
 extension Color {
-    /// 从 "#RRGGBB" 十六进制字符串创建颜色；解析失败回退系统次要标签色。
+    /// Creates a color from a "#RRGGBB" string; falls back to the secondary
+    /// label color when parsing fails.
     init(boardColorHex hex: String) {
         let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
         guard value.count == 6, let integer = UInt64(value, radix: 16) else {

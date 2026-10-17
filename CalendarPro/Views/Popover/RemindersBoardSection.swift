@@ -1,20 +1,9 @@
 import SwiftUI
 import EventKit
 
-// 文件头：
-// 职责：日历弹层中的「提醒事项看板」可折叠分节——标题栏（未完成总数）、
-//       分组头与任务行（完成勾选 + 优先级标识 + 标题 + 到期标签）；
-//       完成保留期内待隐藏行的勾选框按 1 秒周期闪烁。
-// 入口：CalendarPopoverView.calendarView 在日程分节之后插入本分节。
-// 输入来源：RootPopoverView 注入的看板提醒数组与 MenuBarPreferences 看板字段。
-// 输出：无直接输出；勾选交互通过 onToggleReminder 回调交由 EventService 落库。
-// 依赖：BoardSnapshot（纯函数布局）、TimeRefreshCoordinator（当前时间）、EventKit。
-// 副作用：无（仅渲染与回调转发）。
-
-/// 提醒事项看板分节：默认收起，展开后内容区（不含标题行）限高 240pt，超出内部滚动。
+/// Collapsible reminders board section; expanded content scrolls above 240pt.
 struct RemindersBoardSection: View {
     private enum Metrics {
-        // 展开态内容区（不含分节标题行）最大高度：超出时分节内部上下滚动，不无限撑长。
         static let expandedMaxHeight: CGFloat = 240
         static let chevronWidth: CGFloat = 12
         static let priorityDotSize: CGFloat = 6
@@ -26,14 +15,14 @@ struct RemindersBoardSection: View {
     let colorMode: RemindersBoardColorMode
     let colorPreferences: BoardColorPreferences
     let showCompleted: Bool
-    /// 完成后保留显示秒数（0 立即隐藏）；仅在未开启显示已完成时参与快照过滤。
+    /// Seconds a completed row stays visible (0 hides immediately);
+    /// only used when show-completed is off.
     let completedRetentionSeconds: Int
     @ObservedObject var timeRefreshCoordinator: TimeRefreshCoordinator
     let onToggleReminder: (EKReminder) -> Void
 
     @State private var isExpanded = false
 
-    /// 看板布局快照：每次渲染仅计算一次，标题栏与展开内容共用。
     private func makeSnapshot() -> BoardSnapshot {
         BoardSnapshot.make(
             reminders: reminders,
@@ -47,7 +36,7 @@ struct RemindersBoardSection: View {
         )
     }
 
-    /// 勾选交互需要按行 id 反查 EKReminder（行本身是纯值）。
+    // Rows are pure values; map row ids back to EKReminder for the toggle callback.
     private var remindersByID: [String: EKReminder] {
         Dictionary(
             reminders.map { ($0.calendarItemIdentifier, $0) },
@@ -67,7 +56,7 @@ struct RemindersBoardSection: View {
         }
     }
 
-    // MARK: - 标题栏
+    // MARK: - Header
 
     private func header(_ snapshot: BoardSnapshot) -> some View {
         Button {
@@ -101,7 +90,7 @@ struct RemindersBoardSection: View {
         .accessibilityIdentifier("calendar-popover-reminders-board-header")
     }
 
-    // MARK: - 展开内容
+    // MARK: - Expanded content
 
     @ViewBuilder
     private func boardContent(_ snapshot: BoardSnapshot) -> some View {
@@ -147,7 +136,7 @@ struct RemindersBoardSection: View {
         }
     }
 
-    // MARK: - 任务行
+    // MARK: - Task row
 
     private func boardRow(_ row: RemindersBoardRow, reminder: EKReminder?) -> some View {
         HStack(spacing: 6) {
@@ -197,7 +186,6 @@ struct RemindersBoardSection: View {
         .contentShape(Rectangle())
     }
 
-    /// 优先级圆点颜色：已完成行随 completed 色，其余按优先级档取偏好色。
     private func priorityDotColorHex(for row: RemindersBoardRow) -> String {
         if row.isCompleted {
             return colorPreferences.completed
@@ -212,8 +200,8 @@ struct RemindersBoardSection: View {
     }
 }
 
-/// 待隐藏行的勾选框图标：以 1 秒为周期（0.5 秒淡出 + 0.5 秒淡入）做透明度闪烁，
-/// 提示该行完成已记录、即将按保留时长隐藏。
+/// Checkbox icon that blinks (0.5s fade out, 0.5s fade in) to signal a row
+/// recorded as completed and about to leave the board.
 private struct BlinkingCheckboxIcon: View {
     let colorHex: String
 

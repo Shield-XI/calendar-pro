@@ -2,18 +2,6 @@ import AppKit
 import EventKit
 import SwiftUI
 
-// 文件头：
-// 职责：设置窗口「提醒事项」独立菜单页——承载提醒事项看板设置组
-//       （开关、看板提醒列表勾选、显示已完成、完成后保留显示、分组模式、
-//       颜色模式、配色预设与逐色自定义），自 EventsSettingsView 原样迁移。
-// 入口：SettingsRootView.detailView（侧栏 .reminders 项）。
-// 输入来源：SettingsStore.menuBarPreferences 看板字段、
-//       EventService.reminderCalendars 与提醒事项授权状态。
-// 输出：看板设置界面；写入经 SettingsStore setter 持久化。
-// 依赖：SwiftUI、AppKit（NSColor 转换）、EventKit（EKCalendar）、
-//       RemindersBoardModels、BoardColorPreferences。
-// 副作用：无直接副作用；设置变更经 SettingsStore 落盘。
-
 struct RemindersSettingsView: View {
     @ObservedObject var store: SettingsStore
     @ObservedObject var eventService: EventService
@@ -129,7 +117,6 @@ struct RemindersSettingsView: View {
         )
     }
 
-    /// Color → "#RRGGBB"（统一转 sRGB），解析失败回退中性灰。
     private static func hexString(from color: Color) -> String {
         guard let srgb = NSColor(color).usingColorSpace(.sRGB) else {
             return "#8E8E93"
@@ -141,7 +128,6 @@ struct RemindersSettingsView: View {
         return String(format: "#%02X%02X%02X", red, green, blue)
     }
 
-    /// 看板启用的提醒列表勾选区（空=全选归一语义与日程提醒列表一致）。
     private var boardListsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L("看板提醒列表"))
@@ -179,7 +165,6 @@ struct RemindersSettingsView: View {
         }
     }
 
-    /// 看板展示选项：显示已完成、完成后保留显示、分组模式、颜色模式。
     private var boardDisplaySection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle(L("显示已完成"), isOn: boardShowCompletedBinding)
@@ -228,7 +213,6 @@ struct RemindersSettingsView: View {
         }
     }
 
-    /// 看板配色：预设 Picker + 全部颜色 ColorPicker 网格（逐色改动即转 custom）。
     private var boardColorSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -258,7 +242,6 @@ struct RemindersSettingsView: View {
 
     private let boardColorKeys = BoardColorKey.allCases
 
-    /// 颜色键按每行两个切分；键总数为奇数时末行单格渲染，不越界。
     private var boardColorKeyRows: [[BoardColorKey]] {
         stride(from: 0, to: boardColorKeys.count, by: 2).map { start in
             Array(boardColorKeys[start..<min(start + 2, boardColorKeys.count)])

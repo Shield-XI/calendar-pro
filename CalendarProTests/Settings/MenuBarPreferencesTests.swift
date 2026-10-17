@@ -133,8 +133,6 @@ final class MenuBarPreferencesTests: XCTestCase {
           "boardShowCompleted": false
         }
         """.data(using: .utf8)!
-
-        // 旧版 JSON 缺 boardCompletedRetentionSeconds 键时走默认 3 秒。
         let decoded = try JSONDecoder().decode(MenuBarPreferences.self, from: legacyJSON)
 
         XCTAssertEqual(decoded.boardCompletedRetentionSeconds, 3)
