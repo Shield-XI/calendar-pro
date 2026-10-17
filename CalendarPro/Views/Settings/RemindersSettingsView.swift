@@ -4,8 +4,8 @@ import SwiftUI
 
 // 文件头：
 // 职责：设置窗口「提醒事项」独立菜单页——承载提醒事项看板设置组
-//       （开关、看板提醒列表勾选、显示已完成、分组模式、颜色模式、
-//       配色预设与逐色自定义），自 EventsSettingsView 原样迁移。
+//       （开关、看板提醒列表勾选、显示已完成、完成后保留显示、分组模式、
+//       颜色模式、配色预设与逐色自定义），自 EventsSettingsView 原样迁移。
 // 入口：SettingsRootView.detailView（侧栏 .reminders 项）。
 // 输入来源：SettingsStore.menuBarPreferences 看板字段、
 //       EventService.reminderCalendars 与提醒事项授权状态。
@@ -70,6 +70,13 @@ struct RemindersSettingsView: View {
         Binding(
             get: { store.menuBarPreferences.boardShowCompleted },
             set: { store.setBoardShowCompleted($0) }
+        )
+    }
+
+    private var boardCompletedRetentionSecondsBinding: Binding<Int> {
+        Binding(
+            get: { store.menuBarPreferences.boardCompletedRetentionSeconds },
+            set: { store.setBoardCompletedRetentionSeconds($0) }
         )
     }
 
@@ -172,11 +179,26 @@ struct RemindersSettingsView: View {
         }
     }
 
-    /// 看板展示选项：显示已完成、分组模式、颜色模式。
+    /// 看板展示选项：显示已完成、完成后保留显示、分组模式、颜色模式。
     private var boardDisplaySection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle(L("显示已完成"), isOn: boardShowCompletedBinding)
                 .toggleStyle(.checkbox)
+
+            HStack {
+                Text(L("完成后保留显示"))
+                    .font(.system(size: 12))
+                Spacer()
+                Picker(L("完成后保留显示"), selection: boardCompletedRetentionSecondsBinding) {
+                    Text(L("立即隐藏")).tag(0)
+                    Text(L("1 秒")).tag(1)
+                    Text(L("3 秒")).tag(3)
+                    Text(L("5 秒")).tag(5)
+                    Text(L("10 秒")).tag(10)
+                }
+                .frame(width: 160)
+                .labelsHidden()
+            }
 
             HStack {
                 Text(L("分组模式"))

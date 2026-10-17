@@ -287,6 +287,17 @@
         }
       }
     },
+    "立即隐藏" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Immediately"
+          }
+        }
+      }
+    },
     "经典" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -517,6 +528,17 @@
     "10 %@" : {
 
     },
+    "1 秒" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 second"
+          }
+        }
+      }
+    },
     "10-Day Forecast" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -530,6 +552,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "10 日天气"
+          }
+        }
+      }
+    },
+    "10 秒" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10 seconds"
           }
         }
       }
@@ -557,6 +590,17 @@
     "30 %@" : {
 
     },
+    "3 秒" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3 seconds"
+          }
+        }
+      }
+    },
     "30-Day Focus" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -576,6 +620,17 @@
     },
     "60 %@" : {
 
+    },
+    "5 秒" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 seconds"
+          }
+        }
+      }
     },
     "About" : {
       "extractionState" : "stale",
@@ -7105,6 +7160,17 @@
     },
     "基于当前节假日与调休数据生成" : {
 
+    },
+    "完成后保留显示" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Completed Visible"
+          }
+        }
+      }
     },
     "定位到月历" : {
 

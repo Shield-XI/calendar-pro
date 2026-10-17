@@ -60,6 +60,8 @@ struct RootPopoverView: View {
     @State private var weatherDetailTask: Task<Void, Never>?
     @State private var weatherRequestID = UUID()
     @State private var weatherDetailRequestID = UUID()
+    /// 完成保留显示到期后的延时重取任务；同一时刻仅保留一个，旧任务先取消。
+    @State private var boardRetentionRefreshTask: Task<Void, Never>?
     @State private var lastWeatherRefreshTime: Date?
     @State private var lastWeatherRequestedDate: Date?
     @State private var isLoadingWeatherDetails = false
@@ -164,6 +166,8 @@ struct RootPopoverView: View {
             boardColorMode: settingsStore.menuBarPreferences.boardColorMode,
             boardColorPreferences: settingsStore.menuBarPreferences.boardColorPreferences,
             boardShowCompleted: settingsStore.menuBarPreferences.boardShowCompleted,
+            boardCompletedRetentionSeconds:
+                settingsStore.menuBarPreferences.boardCompletedRetentionSeconds,
             canCreateEvent: canCreateEvent,
             canCreateReminder: canCreateReminder,
             onPreviousMonth: {
@@ -520,6 +524,8 @@ struct RootPopoverView: View {
 
     /// 拉取看板提醒数据；关闭看板或未授权时清空。
     /// 仿 loadEvents 模式：取数前快照偏好，落地前按当前开关校验，避免过期数据回写。
+    /// 未开启「显示已完成」且设置了保留时长时，取数附带保留窗口内的已完成提醒，
+    /// 让刚完成的行在窗口期内保留展示；窗口到期后由 scheduleBoardRetentionRefresh 重取移除。
     private func loadBoard() {
         let preferences = settingsStore.menuBarPreferences
 
@@ -530,19 +536,62 @@ struct RootPopoverView: View {
 
         let enabledCalendarIDs = preferences.boardEnabledReminderCalendarIDs
         let includeCompleted = preferences.boardShowCompleted
+        let retentionSeconds = preferences.boardCompletedRetentionSeconds
+        // 显示已完成取全量；仅保留显示时按完成时间窗口截断，避免拉取全部历史已完成。
+        let recentCompletedWindowStart = includeCompleted || retentionSeconds <= 0
+            ? nil
+            : Date().addingTimeInterval(-Double(retentionSeconds))
+
         Task {
             let reminders = await eventService.fetchBoardReminders(
                 enabledCalendarIDs: enabledCalendarIDs,
-                includeCompleted: includeCompleted
+                includeCompleted: includeCompleted,
+                recentCompletedWindowStart: recentCompletedWindowStart
             )
             await MainActor.run {
                 // 仿 loadEvents 的过期校验：取数期间偏好变化则丢弃本次结果，等待下一次触发。
                 let currentPreferences = settingsStore.menuBarPreferences
                 guard currentPreferences.showRemindersBoard,
                       currentPreferences.boardEnabledReminderCalendarIDs == enabledCalendarIDs,
-                      currentPreferences.boardShowCompleted == includeCompleted else { return }
+                      currentPreferences.boardShowCompleted == includeCompleted,
+                      currentPreferences.boardCompletedRetentionSeconds == retentionSeconds
+                else { return }
                 boardReminders = reminders
+                scheduleBoardRetentionRefresh(after: reminders)
             }
+        }
+    }
+
+    /// 完成保留显示到期后安排一次看板重取，让保留行按时消失。
+    /// 锚点统一放在 loadBoard 落地后：勾选完成、外部改动、弹层重开都经过这里，
+    /// 按窗口内最早完成时间计算剩余时长；旧任务先取消，多次完成不堆积。
+    private func scheduleBoardRetentionRefresh(after reminders: [EKReminder]) {
+        boardRetentionRefreshTask?.cancel()
+
+        let preferences = settingsStore.menuBarPreferences
+        guard !preferences.boardShowCompleted else { return }
+        let retentionSeconds = preferences.boardCompletedRetentionSeconds
+        guard retentionSeconds > 0 else { return }
+
+        let windowStart = Date().addingTimeInterval(-Double(retentionSeconds))
+        let earliestCompletedDate = reminders
+            .filter { $0.isCompleted && ($0.completionDate.map { $0 > windowStart } ?? false) }
+            .compactMap(\.completionDate)
+            .min()
+        guard let earliestCompletedDate else { return }
+
+        let remaining = Double(retentionSeconds)
+            - Date().timeIntervalSince(earliestCompletedDate)
+        guard remaining > 0.05 else { return }
+
+        boardRetentionRefreshTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+            } catch {
+                // 被下一次调度取消时静默退出，由新任务接管。
+                return
+            }
+            loadBoard()
         }
     }
 

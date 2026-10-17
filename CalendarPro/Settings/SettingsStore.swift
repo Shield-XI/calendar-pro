@@ -462,6 +462,14 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
+    /// 设置看板完成后保留显示时长（秒，0 表示完成后立即隐藏）。
+    func setBoardCompletedRetentionSeconds(_ seconds: Int) {
+        var prefs = menuBarPreferences
+        prefs.boardCompletedRetentionSeconds = seconds
+        menuBarPreferences = prefs
+        persistMenuBarPreferences()
+    }
+
     /// 设置看板颜色模式（逾期双色或时间分段）。
     func setBoardColorMode(_ mode: RemindersBoardColorMode) {
         var prefs = menuBarPreferences

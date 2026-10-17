@@ -57,6 +57,7 @@ struct CalendarPopoverView: View {
     let boardColorMode: RemindersBoardColorMode
     let boardColorPreferences: BoardColorPreferences
     let boardShowCompleted: Bool
+    let boardCompletedRetentionSeconds: Int
     let canCreateEvent: Bool
     let canCreateReminder: Bool
     let onPreviousMonth: () -> Void
@@ -244,6 +245,7 @@ struct CalendarPopoverView: View {
                 colorMode: boardColorMode,
                 colorPreferences: boardColorPreferences,
                 showCompleted: boardShowCompleted,
+                completedRetentionSeconds: boardCompletedRetentionSeconds,
                 timeRefreshCoordinator: timeRefreshCoordinator,
                 onToggleReminder: onToggleReminder
             )

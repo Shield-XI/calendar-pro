@@ -87,3 +87,25 @@ RootPopoverView 在 onAppear、提醒授权变化、偏好变化、EventKit stor
 - 全部单测通过（BoardSnapshotTests + SettingsStoreTests 新增用例）；
 - 弹层出现可折叠分节，两种分组、两种着色、四套预设切换生效；
 - 逐色修改后预设转自定义并重启保留；勾选完成即时刷新计数。
+
+## 第四轮变更：完成闪烁保留显示（2026-10-17）
+
+用户真机反馈：点击完成提醒事项后行立即消失，缺少「已记录完成」的感知。
+
+- 新增设置项 `boardCompletedRetentionSeconds`（`MenuBarPreferences`，默认 3，
+  旧 JSON 缺键解码走默认）；`RemindersSettingsView` 看板展示组新增
+  「完成后保留显示」Picker：立即隐藏(0)/1/3/5/10 秒，xcstrings 补 en。
+- 快照过滤纯函数化：`BoardSnapshot.make` 增加 `retentionSeconds`；
+  未开启显示已完成时，`completionDate`（EventKit 原生完成时间，字段实名 completionDate）落在
+  `now - retentionSeconds` 之后（严格大于）的已完成行保留展示并标记
+  `isPendingHide`；超期、缺失 completionDate 或 retention=0 时维持旧行为立即隐藏。
+  显示已完成模式下全部常驻，无待隐藏标志。
+- 取数配套：`EventService.fetchBoardReminders` 增加
+  `recentCompletedWindowStart`，关闭显示已完成时按完成时间窗口截断拉取
+  已完成提醒，避免为 3 秒窗口拉取全量历史；保留行「到点隐藏」由
+  `RootPopoverView.loadBoard` 落地后统一调度的延时重取完成（@MainActor
+  Task，单任务句柄先取消防堆积）。
+- UI：待隐藏行勾选框（仅勾选框）以 1 秒周期（0.5 淡出 + 0.5 淡入）闪烁，
+  行划线与 completed 色样式不变。
+- 测试：BoardSnapshotTests 补保留窗口四用例；MenuBarPreferencesTests 补
+  默认值与旧 JSON 解码默认；SettingsStoreTests 补 setter 持久化。

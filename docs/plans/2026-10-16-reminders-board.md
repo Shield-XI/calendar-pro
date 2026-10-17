@@ -104,3 +104,31 @@
 - `xcodebuild test -project CalendarPro.xcodeproj -scheme CalendarPro
   -destination 'platform=macOS' -derivedDataPath .dd` 全量通过
   （统计见提交记录与最终报告）。
+
+## 完成闪烁保留显示（2026-10-17 第四轮）
+
+- `CalendarPro/Features/Events/RemindersBoardModels.swift`：
+  `RemindersBoardRow` 新增 `isPendingHide`；`BoardSnapshot.make` 增加
+  `retentionSeconds` 参数与 `isWithinRetentionWindow` 纯函数判定。
+- `CalendarPro/Features/Events/EventService.swift`：
+  `fetchBoardReminders` 增加 `recentCompletedWindowStart`，完成态查询按
+  `predicateForCompletedReminders(withCompletionDateStarting:)` 窗口截断。
+- `CalendarPro/Settings/MenuBarPreferences.swift`：新增
+  `boardCompletedRetentionSeconds`（默认 3）与 CodingKeys/解码兜底/编码。
+- `CalendarPro/Settings/SettingsStore.swift`：新增
+  `setBoardCompletedRetentionSeconds`。
+- `CalendarPro/Views/Settings/RemindersSettingsView.swift`：看板展示组新增
+  「完成后保留显示」Picker（0/1/3/5/10 秒）。
+- `CalendarPro/Views/Popover/RemindersBoardSection.swift`：新增
+  `completedRetentionSeconds` 入参与 `BlinkingCheckboxIcon`（1 秒周期闪烁）；
+  待隐藏行仅勾选框闪烁，划线与 completed 色不变。
+- `CalendarPro/Views/Popover/CalendarPopoverView.swift` /
+  `CalendarPro/Views/RootPopoverView.swift`：透传设置；
+  `loadBoard` 按窗口取数并在落地后调度 `scheduleBoardRetentionRefresh`
+  （@MainActor Task，先取消旧任务防堆积；勾选完成、外部改动、弹层重开
+  统一经 loadBoard 触发，保留期最后一批行到期即被重取移除）。
+- `CalendarPro/Resources/Localizable.xcstrings`：新增 6 键
+  （完成后保留显示/立即隐藏/1 秒/3 秒/5 秒/10 秒），en 双语。
+- 测试：BoardSnapshotTests 4 个保留窗口用例、MenuBarPreferencesTests 2 个、
+  SettingsStoreTests 1 个持久化用例与旧数据默认断言。
+- 本轮未新增源码/测试文件，未跑 regen。

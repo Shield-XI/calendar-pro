@@ -428,6 +428,19 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.menuBarPreferences.boardColorMode, .timeBucket)
     }
 
+    func testBoardCompletedRetentionSecondsPersist() {
+        let suiteName = #function
+        let userDefaults = makeIsolatedUserDefaults(name: suiteName)
+        let store = makeStore(userDefaults: userDefaults)
+
+        XCTAssertEqual(store.menuBarPreferences.boardCompletedRetentionSeconds, 3)
+
+        store.setBoardCompletedRetentionSeconds(10)
+
+        let reloaded = makeStore(userDefaults: userDefaults)
+        XCTAssertEqual(reloaded.menuBarPreferences.boardCompletedRetentionSeconds, 10)
+    }
+
     func testSetBoardColorPresetAppliesPaletteAndPersists() {
         let suiteName = #function
         let userDefaults = makeIsolatedUserDefaults(name: suiteName)
@@ -501,6 +514,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(store.menuBarPreferences.showRemindersBoard)
         XCTAssertEqual(store.menuBarPreferences.boardGroupingMode, .list)
         XCTAssertFalse(store.menuBarPreferences.boardShowCompleted)
+        XCTAssertEqual(store.menuBarPreferences.boardCompletedRetentionSeconds, 3)
         XCTAssertEqual(store.menuBarPreferences.boardColorMode, .overdue)
         XCTAssertEqual(store.menuBarPreferences.boardColorPreferences, .classic)
         XCTAssertEqual(store.menuBarPreferences.boardColorPreset, .classic)

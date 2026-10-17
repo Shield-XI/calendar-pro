@@ -7,7 +7,8 @@ import SwiftUI
 // 职责：提醒事项看板的纯函数展示模型——分组模式与颜色模式枚举、
 //       EKReminder.priority 到优先级档的映射、到期时间桶解析、
 //       BoardSnapshot 分组/排序/着色布局，以及 hex 颜色互转辅助。
-// 入口：BoardSnapshot.make(reminders:now:calendar:groupingMode:colorMode:colorPreferences:showCompleted:)。
+// 入口：BoardSnapshot.make(reminders:now:calendar:groupingMode:colorMode:
+//       colorPreferences:showCompleted:retentionSeconds:)。
 // 输入来源：EventService.fetchBoardReminders 返回的 EKReminder 与 MenuBarPreferences 看板字段。
 // 输出：BoardSnapshot（分组 + 行展示态 + 未完成总数），供 RemindersBoardSection 渲染与单元测试断言。
 // 依赖：EventKit（仅读取 EKReminder/EKCalendar 属性）、AppKit/SwiftUI（NSColor/Color 十六进制转换）。
@@ -130,6 +131,9 @@ struct RemindersBoardRow: Identifiable, Equatable {
     let priority: ReminderBoardPriority
     let bucket: ReminderBoardTimeBucket
     let colorHex: String
+    /// 完成保留期内待隐藏：未开启显示已完成时，完成时间仍在保留窗口内的行；
+    /// 该标志驱动勾选框闪烁，窗口到期后由延时刷新移除行。
+    let isPendingHide: Bool
 }
 
 /// 看板分组：标题与组头颜色由分组模式决定（列表名+列表色，或优先级档+优先级色）。
@@ -148,12 +152,15 @@ struct BoardSnapshot: Equatable {
     /// 纯函数构建看板快照。
     /// - Parameters:
     ///   - reminders: 待展示的提醒事项（来源：EventService.fetchBoardReminders）
-    ///   - now: 参考当前时间，用于时间桶解析
+    ///   - now: 参考当前时间，用于时间桶解析与完成保留窗口判定
     ///   - calendar: 自然日计算所用日历（默认当前日历，测试可注入 GMT 日历）
     ///   - groupingMode: 分组模式（按列表/按优先级）
     ///   - colorMode: 颜色模式（逾期双色/时间分段）
     ///   - colorPreferences: 看板颜色偏好（hex 值集）
-    ///   - showCompleted: 是否包含已完成提醒；false 时直接过滤
+    ///   - showCompleted: 是否包含已完成提醒；true 时全部常驻显示
+    ///   - retentionSeconds: 完成后保留显示秒数；仅在 showCompleted 为 false 时生效，
+    ///     完成时间落在 now 往前该窗口内的已完成行保留展示并标记待隐藏，
+    ///     0（或超期）时立即过滤（旧行为）
     /// - Returns: 排序、着色完成后的快照；异常数据（无日历/无标题）给默认兜底文案
     static func make(
         reminders: [EKReminder],
@@ -162,12 +169,32 @@ struct BoardSnapshot: Equatable {
         groupingMode: RemindersBoardGroupingMode,
         colorMode: RemindersBoardColorMode,
         colorPreferences: BoardColorPreferences,
-        showCompleted: Bool
+        showCompleted: Bool,
+        retentionSeconds: Int = 0
     ) -> BoardSnapshot {
-        let visibleReminders = reminders.filter { showCompleted || !$0.isCompleted }
+        let visibleReminders = reminders.filter { reminder in
+            if showCompleted || !reminder.isCompleted {
+                return true
+            }
+            return isWithinRetentionWindow(
+                reminder,
+                now: now,
+                retentionSeconds: retentionSeconds
+            )
+        }
 
         let rows = visibleReminders
-            .map { makeRow(for: $0, now: now, calendar: calendar, colorMode: colorMode, colorPreferences: colorPreferences) }
+            .map {
+                makeRow(
+                    for: $0,
+                    now: now,
+                    calendar: calendar,
+                    colorMode: colorMode,
+                    colorPreferences: colorPreferences,
+                    showCompleted: showCompleted,
+                    retentionSeconds: retentionSeconds
+                )
+            }
             .sorted(by: makeRowComparator(calendar: calendar))
 
         let groups: [BoardSnapshotGroup]
@@ -184,12 +211,27 @@ struct BoardSnapshot: Equatable {
 
     // MARK: - 行构建
 
+    /// 完成保留窗口判定：完成时间严格晚于 now 往前 retentionSeconds 秒即视为保留期内。
+    /// retentionSeconds <= 0 或缺失完成时间（completionDate 为 nil）时不保留。
+    private static func isWithinRetentionWindow(
+        _ reminder: EKReminder,
+        now: Date,
+        retentionSeconds: Int
+    ) -> Bool {
+        guard retentionSeconds > 0, let completionDate = reminder.completionDate else {
+            return false
+        }
+        return completionDate > now.addingTimeInterval(-Double(retentionSeconds))
+    }
+
     private static func makeRow(
         for reminder: EKReminder,
         now: Date,
         calendar: Calendar,
         colorMode: RemindersBoardColorMode,
-        colorPreferences: BoardColorPreferences
+        colorPreferences: BoardColorPreferences,
+        showCompleted: Bool,
+        retentionSeconds: Int
     ) -> RemindersBoardRow {
         let dueDate = reminder.dueDateComponents.flatMap { calendar.date(from: $0) }
         let hasExplicitTime = reminder.dueDateComponents.map { components in
@@ -198,6 +240,11 @@ struct BoardSnapshot: Equatable {
         let bucket = ReminderBoardTimeBucket.resolve(dueDate: dueDate, now: now, calendar: calendar)
         let identifier = reminder.calendarItemIdentifier
         let fallbackIdentifier = "unsaved-\(reminder.title ?? "")-\(dueDate?.timeIntervalSinceReferenceDate ?? 0)"
+        // 仅「未开启显示已完成 + 保留期内」的已完成行标记待隐藏（驱动勾选框闪烁）；
+        // 显示已完成模式下全部常驻，无待隐藏态。
+        let isPendingHide = !showCompleted
+            && reminder.isCompleted
+            && isWithinRetentionWindow(reminder, now: now, retentionSeconds: retentionSeconds)
 
         return RemindersBoardRow(
             id: identifier.isEmpty ? fallbackIdentifier : identifier,
@@ -214,7 +261,8 @@ struct BoardSnapshot: Equatable {
                 bucket: bucket,
                 colorMode: colorMode,
                 colorPreferences: colorPreferences
-            )
+            ),
+            isPendingHide: isPendingHide
         )
     }
 

@@ -179,6 +179,8 @@ struct MenuBarPreferences: Codable, Equatable {
     var boardEnabledReminderCalendarIDs: [String] = []
     var boardGroupingMode: RemindersBoardGroupingMode = .list
     var boardShowCompleted: Bool = false
+    /// 完成后保留显示秒数；0 表示完成后立即隐藏，旧数据缺失该键时走默认 3。
+    var boardCompletedRetentionSeconds: Int = 3
     var boardColorMode: RemindersBoardColorMode = .overdue
     var boardColorPreferences: BoardColorPreferences = .classic
     var boardColorPreset: BoardColorPreset = .classic
@@ -326,6 +328,7 @@ extension MenuBarPreferences {
         case boardEnabledReminderCalendarIDs
         case boardGroupingMode
         case boardShowCompleted
+        case boardCompletedRetentionSeconds
         case boardColorMode
         case boardColorPreferences
         case boardColorPreset
@@ -369,6 +372,10 @@ extension MenuBarPreferences {
                 forKey: .boardGroupingMode
             ) ?? .list,
             boardShowCompleted: try container.decodeIfPresent(Bool.self, forKey: .boardShowCompleted) ?? false,
+            boardCompletedRetentionSeconds: try container.decodeIfPresent(
+                Int.self,
+                forKey: .boardCompletedRetentionSeconds
+            ) ?? 3,
             boardColorMode: try container.decodeIfPresent(
                 RemindersBoardColorMode.self,
                 forKey: .boardColorMode
@@ -432,6 +439,10 @@ extension MenuBarPreferences {
         try container.encode(boardEnabledReminderCalendarIDs, forKey: .boardEnabledReminderCalendarIDs)
         try container.encode(boardGroupingMode, forKey: .boardGroupingMode)
         try container.encode(boardShowCompleted, forKey: .boardShowCompleted)
+        try container.encode(
+            boardCompletedRetentionSeconds,
+            forKey: .boardCompletedRetentionSeconds
+        )
         try container.encode(boardColorMode, forKey: .boardColorMode)
         try container.encode(boardColorPreferences, forKey: .boardColorPreferences)
         try container.encode(boardColorPreset, forKey: .boardColorPreset)

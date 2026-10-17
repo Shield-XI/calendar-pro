@@ -4,7 +4,8 @@ import EventKit
 
 // 文件头：
 // 职责：验证提醒事项看板纯函数布局——优先级映射、两种分组、组内排序、
-//       时间桶边界、颜色解析（逾期双色/时间分段/无日期/已完成）与预设方案。
+//       时间桶边界、颜色解析（逾期双色/时间分段/无日期/已完成）、
+//       完成保留窗口（保留期内显示并标记待隐藏/超期与零窗口隐藏）与预设方案。
 // 入口：xcodebuild test（CalendarProTests scheme）。
 // 输入来源：测试内构造的 EKReminder（GMT 固定日期与优先级）。
 // 输出：XCTest 断言结果。
@@ -35,7 +36,8 @@ final class BoardSnapshotTests: XCTestCase {
         priority: Int = 0,
         due: Date? = nil,
         includesTime: Bool = true,
-        isCompleted: Bool = false
+        isCompleted: Bool = false,
+        completedAt: Date? = nil
     ) -> EKReminder {
         let store = EKEventStore()
         let reminder = EKReminder(eventStore: store)
@@ -45,6 +47,11 @@ final class BoardSnapshotTests: XCTestCase {
         reminder.title = title
         reminder.priority = priority
         reminder.isCompleted = isCompleted
+        // 仅显式给值时才设置 completionDate：EventKit 中 completionDate 与
+        // isCompleted 强联动（赋 nil 会把 isCompleted 翻回 false），不能用来清空。
+        if let completedAt {
+            reminder.completionDate = completedAt
+        }
 
         if let due {
             var components = calendar.dateComponents([.year, .month, .day], from: due)
@@ -63,7 +70,8 @@ final class BoardSnapshotTests: XCTestCase {
         groupingMode: RemindersBoardGroupingMode = .list,
         colorMode: RemindersBoardColorMode = .overdue,
         colorPreferences: BoardColorPreferences = .classic,
-        showCompleted: Bool = false
+        showCompleted: Bool = false,
+        retentionSeconds: Int = 0
     ) -> BoardSnapshot {
         BoardSnapshot.make(
             reminders: reminders,
@@ -72,7 +80,8 @@ final class BoardSnapshotTests: XCTestCase {
             groupingMode: groupingMode,
             colorMode: colorMode,
             colorPreferences: colorPreferences,
-            showCompleted: showCompleted
+            showCompleted: showCompleted,
+            retentionSeconds: retentionSeconds
         )
     }
 
@@ -262,6 +271,97 @@ final class BoardSnapshotTests: XCTestCase {
 
         XCTAssertEqual(snapshot.groups[0].rows.count, 3)
         XCTAssertEqual(snapshot.incompleteCount, 2)
+    }
+
+    // MARK: - 完成保留窗口
+
+    func testCompletedRowsFilterByRetentionWindowAndFlagPendingHide() {
+        let snapshot = makeSnapshot(
+            [
+                makeReminder(
+                    title: "fresh",
+                    isCompleted: true,
+                    completedAt: now.addingTimeInterval(-1)
+                ),
+                makeReminder(
+                    title: "boundary",
+                    isCompleted: true,
+                    completedAt: now.addingTimeInterval(-3)
+                ),
+                makeReminder(
+                    title: "stale",
+                    isCompleted: true,
+                    completedAt: now.addingTimeInterval(-10)
+                )
+            ],
+            retentionSeconds: 3
+        )
+
+        // 窗口判定为严格大于：边界（恰好等于 now - retentionSeconds）与超期都不保留，
+        // 仅窗口内的行保留展示并标记待隐藏。
+        // 注：isCompleted=true 且 completionDate=nil（他端完成后未回写时间）无法在
+        // 内存中构造，模型里的空值兜底分支（视为不保留）靠代码评审保证。
+        XCTAssertEqual(snapshot.groups[0].rows.map(\.title), ["fresh"])
+        XCTAssertTrue(snapshot.groups[0].rows[0].isPendingHide)
+        XCTAssertEqual(snapshot.incompleteCount, 0)
+    }
+
+    func testZeroRetentionHidesCompletedRowsImmediately() {
+        let snapshot = makeSnapshot(
+            [
+                makeReminder(
+                    title: "done",
+                    isCompleted: true,
+                    completedAt: now.addingTimeInterval(-0.5)
+                ),
+            ],
+            retentionSeconds: 0
+        )
+
+        // 旧行为：retentionSeconds 为 0 时完成后立即隐藏（整行被过滤，分组为空）。
+        XCTAssertTrue(snapshot.groups.isEmpty)
+    }
+
+    func testShowCompletedModeKeepsAllRowsPersistentWithoutPendingHideFlag() {
+        let snapshot = makeSnapshot(
+            [
+                makeReminder(
+                    title: "fresh",
+                    isCompleted: true,
+                    completedAt: now.addingTimeInterval(-1)
+                ),
+                makeReminder(
+                    title: "old",
+                    isCompleted: true,
+                    completedAt: now.addingTimeInterval(-3600)
+                )
+            ],
+            showCompleted: true,
+            retentionSeconds: 3
+        )
+
+        // 显示已完成模式全部常驻显示，无待隐藏标志、无闪烁。
+        XCTAssertEqual(snapshot.groups[0].rows.map(\.title), ["fresh", "old"])
+        XCTAssertFalse(snapshot.groups[0].rows.contains { $0.isPendingHide })
+    }
+
+    func testIncompleteRowsUnaffectedByRetentionWindow() {
+        let snapshot = makeSnapshot(
+            [
+                makeReminder(title: "todo", due: makeDate(10, 17)),
+                makeReminder(
+                    title: "done",
+                    isCompleted: true,
+                    completedAt: now.addingTimeInterval(-1)
+                )
+            ],
+            retentionSeconds: 3
+        )
+
+        // 未完成行不受保留窗口影响；窗口内的已完成行按预期保留。
+        XCTAssertEqual(snapshot.groups[0].rows.map(\.title), ["todo", "done"])
+        XCTAssertFalse(snapshot.groups[0].rows[0].isPendingHide)
+        XCTAssertTrue(snapshot.groups[0].rows[1].isPendingHide)
     }
 
     // MARK: - 预设方案

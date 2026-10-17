@@ -3,7 +3,8 @@ import EventKit
 
 // 文件头：
 // 职责：日历弹层中的「提醒事项看板」可折叠分节——标题栏（未完成总数）、
-//       分组头与任务行（完成勾选 + 优先级标识 + 标题 + 到期标签）。
+//       分组头与任务行（完成勾选 + 优先级标识 + 标题 + 到期标签）；
+//       完成保留期内待隐藏行的勾选框按 1 秒周期闪烁。
 // 入口：CalendarPopoverView.calendarView 在日程分节之后插入本分节。
 // 输入来源：RootPopoverView 注入的看板提醒数组与 MenuBarPreferences 看板字段。
 // 输出：无直接输出；勾选交互通过 onToggleReminder 回调交由 EventService 落库。
@@ -24,6 +25,8 @@ struct RemindersBoardSection: View {
     let colorMode: RemindersBoardColorMode
     let colorPreferences: BoardColorPreferences
     let showCompleted: Bool
+    /// 完成后保留显示秒数（0 立即隐藏）；仅在未开启显示已完成时参与快照过滤。
+    let completedRetentionSeconds: Int
     @ObservedObject var timeRefreshCoordinator: TimeRefreshCoordinator
     let onToggleReminder: (EKReminder) -> Void
 
@@ -38,7 +41,8 @@ struct RemindersBoardSection: View {
             groupingMode: groupingMode,
             colorMode: colorMode,
             colorPreferences: colorPreferences,
-            showCompleted: showCompleted
+            showCompleted: showCompleted,
+            retentionSeconds: completedRetentionSeconds
         )
     }
 
@@ -151,9 +155,15 @@ struct RemindersBoardSection: View {
                     onToggleReminder(reminder)
                 }
             } label: {
-                Image(systemName: row.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(row.isCompleted ? Color(boardColorHex: row.colorHex) : .secondary)
+                if row.isPendingHide {
+                    BlinkingCheckboxIcon(colorHex: row.colorHex)
+                } else {
+                    Image(systemName: row.isCompleted ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(
+                            row.isCompleted ? Color(boardColorHex: row.colorHex) : .secondary
+                        )
+                }
             }
             .buttonStyle(.plain)
             .disabled(reminder == nil)
@@ -198,5 +208,25 @@ struct RemindersBoardSection: View {
         case .low: return colorPreferences.priorityLow
         case .none: return colorPreferences.priorityNone
         }
+    }
+}
+
+/// 待隐藏行的勾选框图标：以 1 秒为周期（0.5 秒淡出 + 0.5 秒淡入）做透明度闪烁，
+/// 提示该行完成已记录、即将按保留时长隐藏。
+private struct BlinkingCheckboxIcon: View {
+    let colorHex: String
+
+    @State private var isDimmed = false
+
+    var body: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Color(boardColorHex: colorHex))
+            .opacity(isDimmed ? 0.15 : 1)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                    isDimmed = true
+                }
+            }
     }
 }
