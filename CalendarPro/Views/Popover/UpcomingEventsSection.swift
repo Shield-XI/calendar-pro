@@ -262,49 +262,57 @@ struct UpcomingEventsSection: View {
         return LF("%d items", snapshot.totalItemCount)
     }
 
-    /// 展开态内容：空态文案或按天分组的滚动列表（条数分页：底部哨兵自动
-    /// 加载下一页，顶部下拉过拉向过去加载一页，打开时重置并回顶）。
+    /// 展开态内容：按天分组的滚动列表（条数分页：底部哨兵自动加载下一
+    /// 页，顶部下拉过拉向过去加载一页，打开时重置并回顶）。无条目时同
+    /// 样渲染 ScrollView：空态文案放在列表顶部行之后，保留下拉探针与
+    /// 过去端提示行，未来无条目（首屏+360 天全空）时仍可下拉加载过去。
     /// - Parameter snapshot: body 内单次求值的分组快照
     @ViewBuilder
     private func expandedContent(_ snapshot: UpcomingSnapshot) -> some View {
-        if items.isEmpty, !(isLoadingPast || isLoadingFuture) {
-            Text(L("No Recent Events"))
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-        } else {
-            ScrollViewReader { proxy in
-                ScrollView(.vertical) {
-                    // 用 LazyVStack 而非 VStack：普通 VStack 会一次性物化全部子
-                    // 视图，底部哨兵的 onAppear 在展开瞬间就会立即触发；LazyVStack
-                    // 只在子视图滚动到可视区域附近才渲染，哨兵出现即代表“差不多
-                    // 到底”
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        topRow
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                // 用 LazyVStack 而非 VStack：普通 VStack 会一次性物化全部子
+                // 视图，底部哨兵的 onAppear 在展开瞬间就会立即触发；LazyVStack
+                // 只在子视图滚动到可视区域附近才渲染，哨兵出现即代表“差不多
+                // 到底”
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    topRow
 
+                    if items.isEmpty, !(isLoadingPast || isLoadingFuture) {
+                        emptyStateRow
+                    } else {
                         ForEach(snapshot.dayGroups) { group in
                             dayGroupView(group)
                         }
-
-                        if isLoadingFuture {
-                            progressRow
-                        } else if hasMoreFuture {
-                            loadFutureTrigger
-                        }
                     }
-                    .padding(.vertical, 1)
+
+                    if isLoadingFuture {
+                        progressRow
+                    } else if hasMoreFuture {
+                        loadFutureTrigger
+                    }
                 }
-                .coordinateSpace(name: Metrics.scrollCoordinateSpace)
-                .onPreferenceChange(PastPullOffsetKey.self) { offset in
-                    handlePastPullOffset(offset)
-                }
-                .onChange(of: resetGeneration) { _, _ in
-                    // 数据重置后滚动偏移会残留，显式回滚到列表顶锚点
-                    proxy.scrollTo(Metrics.topAnchorID, anchor: .top)
-                }
+                .padding(.vertical, 1)
+            }
+            .coordinateSpace(name: Metrics.scrollCoordinateSpace)
+            .onPreferenceChange(PastPullOffsetKey.self) { offset in
+                handlePastPullOffset(offset)
+            }
+            .onChange(of: resetGeneration) { _, _ in
+                // 数据重置后滚动偏移会残留，显式回滚到列表顶锚点
+                proxy.scrollTo(Metrics.topAnchorID, anchor: .top)
             }
         }
+    }
+
+    /// 空态文案行：无已加载条目且两端都不在加载时显示。留在 ScrollView
+    /// 内渲染（见 expandedContent），下拉加载过去的入口不因空态丢失。
+    private var emptyStateRow: some View {
+        Text(L("No Recent Events"))
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
     }
 
     /// 列表顶部行：常驻回顶锚（兼下拉偏移探针）+ 过去端状态行（加载中
