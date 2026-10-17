@@ -370,6 +370,89 @@ xcodebuild test -project CalendarPro.xcodeproj -scheme CalendarPro \
 下拉过拉触发、弹层打开重置与回顶属运行时交互链路，静态验证编译与
 单测覆盖纯函数部分，交互链路以人工验证为准（无新增源文件，未跑 regen）。
 
+## 条数分页验收修复（2026-10-17 第三批）
+
+增量验收工作流核实三条问题（均为条数分页重构 48d2b4a 引入或暴露），
+逐项独立提交修复：
+
+### 1. 双方向共享竞态 ID 导致并发互相作废（commit faeb199）
+
+- 根因：单一 `upcomingRequestID` 被两方向共享，各方向入口只 guard 自己
+  的 isLoading，跨方向不互斥；后发加载无条件覆盖共享 ID，先发方向完成
+  块竞态校验失败后连同 isLoading 复位一起跳过——先发方向永久 Loading
+  （哨兵/下拉入口被守卫拦截，直至弹层重开才恢复）。
+- 修法：ID 拆为 `upcomingPastRequestID` / `upcomingFutureRequestID` 两
+  个方向竞态域，各方向入口自增自己的 ID、完成块只校验并复位本方向的
+  游标与在途标记，跨方向互不作废；重置（`resetUpcomingPaginationAnd
+  LoadFirstPage`）与清空（`clearLoadedUpcoming`）统一递增两个 ID 作废
+  所有在途加载。两方向真并发（下拉加载过去的同时哨兵加载未来）成为
+  合法状态，各自的进度行/哨兵互不干扰。首屏第一页装载属未来方向域
+  （从当天零点起），用 future ID。
+
+### 2. 过去方向页满游标跳窗，丢窗内剩余条目（commit 7c3aa6d）
+
+- 根因（数值复现）：`advanceUpcomingPage` 页满分支对两方向统一返回
+  `nextWindowStart = windowStart`，但过去窗为 [windowStart, windowEnd)
+  且游标=窗上界——页满后下一次查询窗变为 [windowStart-30天, windowStart)，
+  本窗剩余条目（单窗 12 条取走 10 条剩 2 条）永不复查，且下一窗为空会
+  误判历史尽头（missing 2 条）；未来方向同场景正常。
+- 修法（方向感知的页满复查游标）：页满分支未来方向复查游标=windowStart
+  （现状正确，回归对照），过去方向复查游标=windowEnd（复查同一窗）。
+- 契约修正：页满即退出装配循环（collected.count 达页大小先于循环条件
+  判断失效），`isResumingWindow` 在生产接线的复查路径此前恒为 false，
+  纯函数「复查窗零新条目不算过去端尽头」的豁免分支永不可达。新增分
+  方向 `isUpcomingPastResumingWindow` / `isUpcomingFutureResumingWindow`
+  状态：上一次页装配以页满收尾（未尽头）时由完成块置位，下一次装载
+  首窗按同窗复查处理；复查耗尽、尽头或触达循环上限收尾时归 false；
+  重置/清空归 false。同刻与页界条目由 `loadedIdentifiers` 身份去重吸收。
+- 测试：新增 3 条（套件 27→30）。`testPastPageFullResumesWindowAt
+  WindowEnd`（纯函数过去方向页满 nextWindowStart==windowEnd）；`testPast
+  CrossPullRetrievesAllItemsFromSingleWindow`（镜像生产循环替身
+  `mirrorLoadPage` 跑两轮下拉：单窗 12 条第一拉取 10 条页满、第二拉复
+  查同窗拿剩余 2 条拿全 12 条，修复前第二拉带不回任何条目即误判尽头，
+  修复后尽头判定在更早空窗处才成立）；`testFutureCrossPullRetrieves
+  AllItemsFromSingleWindow`（未来方向同场景回归对照，复查后触达设置
+  上限判尽头）。替身与生产循环的窗界构造/循环条件/标记传递逐一镜像，
+  生产 @State 接线本身无法单测。
+
+### 3. 空态分支丢失下拉入口（commit f3c0e38）
+
+- 根因：items 为空且不在加载时渲染静态空态 Text，整个 ScrollView（含
+  GeometryReader 下拉探针与过去端提示行）不进视图层级——未来无条目
+  （首屏+360 天全空）时无法下拉加载过去。
+- 修法：空态文案移入 ScrollView 内渲染（列表顶部行之后，抽为
+  `emptyStateRow`），下拉探针、提示行与底部哨兵照常挂载；过去方向
+  加载回来条目后正常进按天分组列表。加载中仍显示进度行、空态文案
+  暂隐，与既有分支语义一致。
+
+### 验证
+
+```bash
+xcodebuild build -project CalendarPro.xcodeproj -scheme CalendarPro \
+  -destination 'platform=macOS' -derivedDataPath .dd
+# BUILD SUCCEEDED（三个修复各提交前均单独通过）
+
+xcodebuild test -project CalendarPro.xcodeproj -scheme CalendarPro \
+  -destination 'platform=macOS' -derivedDataPath .dd \
+  -skip-testing:CalendarProUITests
+# Executed 414 tests, with 0 failures (0 unexpected)
+```
+
+备注：414 = 基线 411 + 本批新增 3。已知 flaky 用例
+`testStoreChangeRevisionIncrementsOnNotification` 本轮未复现。UI 测试
+按基线跳过（本机 Runner 环境问题，UI 测试代码未变动）。无新增源文件，
+未跑 regen。
+
+### 人工验证项（@State/视图编排层无法单测）
+
+- 修复 1：下拉加载过去的进行中触发底部哨兵（或反向），两方向互不
+  作废、各自 Loading 正常收尾；加载中改设置/授权/跨天，在途结果被
+  丢弃且无永久 Loading。
+- 修复 2：单窗条目数超过页大小（如一天内 12 个事件）时下拉两次能
+  拿全 12 条、不出现「提前无更早」；未来方向连续滚动回归正常。
+- 修复 3：未来无任何条目的日历，展开近期日程显示空态文案与「下拉
+  加载更早日程」提示，下拉能加载过去条目。
+
 ## 未确定项 / 后续可迭代
 
 - 下拉过拉触发、打开重置回顶等交互链路以人工验证为准（见上）。
