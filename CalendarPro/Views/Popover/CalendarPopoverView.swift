@@ -40,11 +40,11 @@ struct CalendarPopoverView: View {
     let hasMoreUpcomingPast: Bool
     let hasMoreUpcomingFuture: Bool
     let upcomingDefaultExpanded: Bool
-    // 分页重置代数：每次弹层重置分页递增，「近期日程」分节据此把滚动
-    // 位置显式拉回列表顶
+    // Bumped on every pagination reset; the section scrolls back to its top
+    // anchor because data resets leave stale scroll offsets behind
     let upcomingResetGeneration: Int
-    // 弹层展示代数：PopoverController 每次 show 递增，分节据此在弹层
-    // 重开时按设置重置展开态（视图实例跨打开存活，onAppear 不可靠）
+    // Bumped by PopoverController on every show; drives the expansion reset
+    // on popover reopen (view instances survive reuse, onAppear does not)
     let upcomingPresentationGeneration: Int
     let selectedDate: Date?
     let items: [CalendarItem]

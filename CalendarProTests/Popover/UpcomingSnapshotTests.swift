@@ -2,16 +2,6 @@ import XCTest
 import EventKit
 @testable import CalendarPro
 
-// 文件头：
-// 职责：验证 UpcomingSnapshot 的按天分组纯函数（含双向窗口下的过去天组、
-//       「昨天」天头与多天事件单次分组）、EventService 事件/提醒近期窗口
-//       过滤（含递归展开近似），以及 RootPopoverView 条数分页的切片与
-//       游标推进纯函数（跨窗凑页/同刻不重不漏/尽头判定/页满跨拉取复查，
-//       后者经镜像生产循环的替身驱动）的行为。
-// 输入：GMT 固定日历 + DateComponents 构造的固定日期与 EventKit 夹具。
-// 输出：XCTest 断言结果。
-// 依赖：XCTest、EventKit、@testable CalendarPro。
-
 final class UpcomingSnapshotTests: XCTestCase {
     private let calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
@@ -19,7 +9,7 @@ final class UpcomingSnapshotTests: XCTestCase {
         return calendar
     }()
 
-    // MARK: - UpcomingSnapshot 分组
+    // MARK: - UpcomingSnapshot grouping
 
     func testGroupsItemsByDayInAscendingOrder() {
         let now = makeDate(2026, 10, 16, 10, 0)
@@ -81,7 +71,7 @@ final class UpcomingSnapshotTests: XCTestCase {
 
         XCTAssertEqual(snapshot.dayGroups.count, 1)
         let group = try XCTUnwrap(snapshot.dayGroups.first)
-        // 同一天内：全天在前，其余按开始时间升序
+        // Within a day: all-day items first, then by start time
         XCTAssertEqual(group.items.count, 4)
         XCTAssertTrue(group.items[0].isAllDay)
         XCTAssertLessThanOrEqual(
@@ -106,9 +96,9 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testIgnoresItemsWithoutStartDate() {
-        // dueDateComponents 为 nil 的提醒没有开始日期，快照应忽略
+        // No dueDateComponents means no start date; the snapshot ignores it
         let reminderWithoutDueDate = EKReminder(eventStore: EKEventStore())
-        reminderWithoutDueDate.title = "无到期提醒"
+        reminderWithoutDueDate.title = "reminder without due date"
         let snapshot = UpcomingSnapshot.make(
             items: [CalendarItem.reminder(reminderWithoutDueDate)],
             now: makeDate(2026, 10, 16, 10, 0),
@@ -119,10 +109,10 @@ final class UpcomingSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.totalItemCount, 0)
     }
 
-    // MARK: - 双向窗口分组（过去天组）
+    // MARK: - Bidirectional window grouping (past day groups)
 
     func testPastEventsFormAscendingDayGroupsWithFutureGroups() {
-        // 过去事件纳入分组，过去天组与未来天组共存且整体按天升序
+        // Past and future day groups coexist in one ascending order
         let now = makeDate(2026, 10, 16, 10, 0)
         let threeDaysAgo = makeEvent(
             start: makeDate(2026, 10, 13, 9, 0),
@@ -173,7 +163,7 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testMultiDayEventAppearsOnceInItsStartDayGroup() {
-        // 多天事件只按开始日分组一次，不跨天重复展示
+        // Multi-day events group once on their start day only
         let now = makeDate(2026, 10, 16, 10, 0)
         let multiDayEvent = makeEvent(
             start: makeDate(2026, 10, 12, 20, 0),
@@ -195,7 +185,7 @@ final class UpcomingSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.totalItemCount, 1)
     }
 
-    // MARK: - EventService.reminder(isDueWithin:) 近期窗口过滤
+    // MARK: - EventService.reminder(isDueWithin:) window filtering
 
     @MainActor
     func testReminderWindowFilterAcceptsDueWithinWindow() {
@@ -227,7 +217,8 @@ final class UpcomingSnapshotTests: XCTestCase {
 
     @MainActor
     func testReminderWindowFilterExpandsDailyRecurrenceIntoWindow() {
-        // 基准到期日早于窗口起点，递归规则为每日一次，应近似展开命中窗口
+        // Daily recurrence based before the window still hits via the
+        // per-day approximation
         let reminder = makeReminder(2026, 10, 1, 8, 0)
         reminder.recurrenceRules = [
             EKRecurrenceRule(recurrenceWith: .daily, interval: 1, end: nil)
@@ -245,13 +236,13 @@ final class UpcomingSnapshotTests: XCTestCase {
 
     @MainActor
     func testReminderWindowFilterRejectsWeeklyRecurrenceOutsideWindow() {
-        // 每周五重复的提醒，窗口内没有周五时应被过滤
+        // Weekly (Friday) reminder stays out when the window has no Friday
         let reminder = makeReminder(2026, 10, 9, 8, 0)
         reminder.recurrenceRules = [
             EKRecurrenceRule(recurrenceWith: .weekly, interval: 1, end: nil)
         ]
 
-        // 2026-10-16(周五) ~ 2026-10-19(周一)：窗口含周五，改用不含周五的窗口验证
+        // The default window contains a Friday; use a Friday-free window
         let windowStart = calendar.startOfDay(for: makeDate(2026, 10, 17, 0, 0))
         let windowEnd = makeDate(2026, 10, 22, 0, 0)
 
@@ -265,12 +256,13 @@ final class UpcomingSnapshotTests: XCTestCase {
         XCTAssertFalse(isDue)
     }
 
-    // MARK: - EventService.event(isWithinUpcomingWindow:) 近期窗口过滤
+    // MARK: - EventService.event(isWithinUpcomingWindow:) window filtering
 
     @MainActor
     func testEventWindowFilterExcludesMultiDayEventStartedBeforeWindowStart() {
-        // 昨天开始、今天未结束：重叠语义谓词会查出，但开始早于窗口起点应
-        // 排除，多天事件只在其开始日所在的窗口内展示一次
+        // The overlap predicate still returns it, but a start before the
+        // window is excluded so multi-day events show once, in their
+        // start-day window
         let event = makeEKEvent(
             start: makeDate(2026, 10, 15, 20, 0),
             end: makeDate(2026, 10, 16, 12, 0)
@@ -303,7 +295,8 @@ final class UpcomingSnapshotTests: XCTestCase {
 
     @MainActor
     func testEventWindowFilterIncludesEventStartedTodayAfterWindowStart() {
-        // 今天零点后开始的事件应保留；双向窗口下已结束的当天事件同样纳入
+        // Started-after-midnight events stay; ended same-day events stay
+        // too under the bidirectional window
         let event = makeEKEvent(
             start: makeDate(2026, 10, 16, 8, 0),
             end: makeDate(2026, 10, 16, 12, 0)
@@ -320,7 +313,8 @@ final class UpcomingSnapshotTests: XCTestCase {
 
     @MainActor
     func testEventWindowFilterIncludesPastEventWithinExtendedWindow() {
-        // 窗口向过去扩展后，窗口内已结束的事件应纳入（上滚查看过去日程）
+        // Ended events inside an extended past window are included for
+        // history browsing
         let event = makeEKEvent(
             start: makeDate(2026, 10, 12, 9, 0),
             end: makeDate(2026, 10, 12, 10, 0)
@@ -335,9 +329,9 @@ final class UpcomingSnapshotTests: XCTestCase {
         XCTAssertTrue(isIncluded)
     }
 
-    // MARK: - RootPopoverView.advanceUpcomingPage 条数分页切片与游标推进
+    // MARK: - RootPopoverView.advanceUpcomingPage slice and cursor advance
 
-    /// advanceUpcomingPage 的便捷封装：页大小等默认取分页常量，减少用例样板。
+    /// Convenience wrapper applying paging defaults to cut case boilerplate.
     private func advance(
         direction: RootPopoverView.UpcomingPageDirection,
         windowItems: [CalendarItem],
@@ -366,13 +360,13 @@ final class UpcomingSnapshotTests: XCTestCase {
         )
     }
 
-    /// 构造从 firstStart 起按固定间隔排列的 n 条事件夹具（标题各异，
-    /// 保证未挂日历事件的后备身份互不相同）。
+    /// Builds n events spaced evenly from firstStart with distinct titles
+    /// so fallback identities stay unique.
     private func makeSequentialEvents(
         count: Int,
         firstStart: Date,
         interval: TimeInterval = 3600,
-        titlePrefix: String = "事件"
+        titlePrefix: String = "event"
     ) -> [CalendarItem] {
         (0..<count).map { index in
             .event(makeEKEvent(
@@ -383,13 +377,13 @@ final class UpcomingSnapshotTests: XCTestCase {
         }
     }
 
-    /// 镜像 loadUpcomingPage 生产循环的页装配替身：窗界构造（未来
-    /// [cursor, cursor+30天)、过去 [cursor-30天, cursor)，游标即过去窗
-    /// 上界）、切片推进、单页 12 窗循环上限、设置上限与页满复查标记的
-    /// 窗间传递均与生产实现一致；EventKit 窗口查询以 universe 窗内过滤
-    /// 替身（半开区间）。游标与复查标记由调用方跨调用传递，用于验证
-    /// 「页满中断 → 同窗复查」两轮拉取的纯函数序列契约；生产 @State
-    /// 接线本身无法单测，以人工验证为准。
+    /// Test double mirroring the production loadUpcomingPage loop: window
+    /// construction (future [cursor, cursor+30d), past [cursor-30d, cursor)
+    /// with the cursor as the past upper bound), slice advance, 12-window
+    /// cap and resume-flag hand-off all match production; the EventKit
+    /// query is a half-open range filter over universe. Cursor and resume
+    /// flag are passed across calls to verify the page-full resume
+    /// sequence contract.
     private func mirrorLoadPage(
         direction: RootPopoverView.UpcomingPageDirection,
         cursor: Date,
@@ -441,7 +435,7 @@ final class UpcomingSnapshotTests: XCTestCase {
             }
 
             queriedWindowCount += 1
-            // EventKit 窗口查询替身：返回落入窗内的全部条目
+            // EventKit query double: returns everything in the window
             let windowItems = universe.filter { item in
                 guard let startDate = item.startDate else { return false }
                 return startDate >= windowStart && startDate < windowEnd
@@ -468,8 +462,8 @@ final class UpcomingSnapshotTests: XCTestCase {
             isExhausted = step.isExhausted
         }
 
-        // 收尾判定与生产一致：尽头/触达循环上限视为尽头（游标 nil）；
-        // 页满收尾时下一次装载的第一窗为同窗复查
+        // Same finish rules as production: exhaustion or window cap means a
+        // nil cursor; page-full finish resumes the same window next load
         let hitWindowCap = !isExhausted
             && collected.count < RootPopoverView.upcomingPageSize
         let finalCursor: Date? = (isExhausted || hitWindowCap) ? nil : workingCursor
@@ -484,7 +478,8 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testFuturePageTakesUpToPageSizeAndResumesSameWindow() {
-        // 窗内 12 条取前 10 条凑满一页：游标停在当前窗起点（复查续接页界）
+        // 12 in window: take 10, cursor stays at window start so the
+        // resume re-covers the page boundary
         let windowStart = makeDate(2026, 10, 16, 0, 0)
         let windowEnd = makeDate(2026, 11, 15, 0, 0)
         let items = makeSequentialEvents(count: 12, firstStart: windowStart)
@@ -504,7 +499,7 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testFuturePageAdvancesToWindowEndWhenWindowSparse() {
-        // 窗内条目不足一页：未凑满则游标推进到窗尾继续跨窗凑页
+        // Under-full window advances the cursor to the window end
         let windowStart = makeDate(2026, 10, 16, 0, 0)
         let windowEnd = makeDate(2026, 11, 15, 0, 0)
         let items = makeSequentialEvents(count: 3, firstStart: windowStart)
@@ -523,7 +518,8 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testFuturePageCrossesEmptyWindowWithoutExhausting() {
-        // 未来方向空窗不算尽头：游标推进到窗尾继续（靠单页窗口循环上限兜底）
+        // Empty future window is not the end; the per-page window cap
+        // bounds the loop
         let windowStart = makeDate(2026, 10, 16, 0, 0)
         let windowEnd = makeDate(2026, 11, 15, 0, 0)
 
@@ -541,8 +537,8 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testFuturePageExhaustsAtLimitBound() {
-        // 窗尾已裁剪到设置上限（windowEnd == futureLimitEnd）且未凑满：
-        // 触达上限即尽头，游标置 nil
+        // Window end clipped to the user limit and still under-full: the
+        // limit means exhausted, nil cursor
         let windowStart = makeDate(2026, 10, 16, 0, 0)
         let windowEnd = makeDate(2027, 1, 14, 10, 0)
         let items = makeSequentialEvents(count: 3, firstStart: windowStart)
@@ -562,8 +558,8 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testFuturePageContinuationSkipsLoadedItemsAndTakesRemainder() {
-        // 跨页续接：第一页取走 10 条后，第二页复查同一窗只取剩余 2 条，
-        // 已加载身份不重复返回，且窗口耗尽后正常推进游标
+        // The continuation page re-queries the same window and takes only
+        // the remaining 2, never repeating loaded identities
         let windowStart = makeDate(2026, 10, 16, 0, 0)
         let windowEnd = makeDate(2026, 11, 15, 0, 0)
         let items = makeSequentialEvents(count: 12, firstStart: windowStart)
@@ -588,7 +584,7 @@ final class UpcomingSnapshotTests: XCTestCase {
         XCTAssertFalse(secondStep.slice.isPageFull)
         XCTAssertFalse(secondStep.isExhausted)
         XCTAssertEqual(secondStep.nextWindowStart, windowEnd)
-        // 取走的正是首屏未覆盖的末尾两条
+        // Exactly the two items the first page skipped
         XCTAssertEqual(
             Set(secondStep.slice.takenItems.map(\.selectionIdentifier)),
             Set(items.suffix(2).map(\.selectionIdentifier))
@@ -596,8 +592,8 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testSameInstantGroupSplitAcrossPagesNotDuplicatedNorLost() {
-        // 同刻条目跨页界：3 条同开始时间事件按页大小 2 切分，第一页取 2 条，
-        // 复查后第二页恰好取走剩下 1 条，不重不漏
+        // Same-instant items split across the page boundary: pages of 2
+        // then 1, no duplicates, none lost
         let windowStart = makeDate(2026, 10, 16, 0, 0)
         let windowEnd = makeDate(2026, 10, 20, 0, 0)
         let sameInstant = makeDate(2026, 10, 17, 9, 0)
@@ -605,7 +601,7 @@ final class UpcomingSnapshotTests: XCTestCase {
             count: 3,
             firstStart: sameInstant,
             interval: 0,
-            titlePrefix: "同刻"
+            titlePrefix: "same-instant"
         )
 
         let firstStep = advance(
@@ -634,7 +630,6 @@ final class UpcomingSnapshotTests: XCTestCase {
                 .union(secondStep.slice.takenItems.map(\.selectionIdentifier)),
             Set(items.map(\.selectionIdentifier))
         )
-        // 两页取走集合不相交（不重复）
         XCTAssertTrue(
             Set(firstStep.slice.takenItems.map(\.selectionIdentifier))
                 .isDisjoint(with: Set(secondStep.slice.takenItems.map(\.selectionIdentifier)))
@@ -642,9 +637,9 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testPastPageTakesMostRecentItemsFirst() {
-        // 过去方向取离游标最近的一批：窗内 12 条取最近的 10 条（开始时间
-        // 最大者），输出按升序存放；页满后复查游标=窗上界（复查同一窗，
-        // 跳到窗起点会丢窗内剩余条目）
+        // Past direction takes the most recent batch, stored ascending;
+        // the resume cursor is the window upper bound because rewinding to
+        // the start would skip the leftovers
         let windowStart = makeDate(2026, 10, 1, 0, 0)
         let windowEnd = makeDate(2026, 10, 16, 0, 0)
         let items = makeSequentialEvents(count: 12, firstStart: windowStart)
@@ -658,7 +653,6 @@ final class UpcomingSnapshotTests: XCTestCase {
 
         XCTAssertEqual(step.slice.takenItems.count, 10)
         XCTAssertTrue(step.slice.isPageFull)
-        // 输出升序：最早的取走条目是原序列第 3 条
         XCTAssertEqual(
             step.slice.takenItems.map(\.startDate),
             Array(items.suffix(10)).map(\.startDate)
@@ -668,9 +662,9 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testPastPageFullResumesWindowAtWindowEnd() {
-        // 修复回归：过去方向页满后的复查游标=窗上界 windowEnd（而非窗起
-        // 点），下一次查询窗仍是同一窗 [windowStart, windowEnd)，窗内剩余
-        // 条目可被复查取走
+        // Page-full past resume cursor must be the window upper bound so
+        // the next query re-covers the same window and leftovers stay
+        // reachable
         let windowStart = makeDate(2026, 10, 1, 0, 0)
         let windowEnd = makeDate(2026, 10, 16, 0, 0)
         let items = makeSequentialEvents(count: 12, firstStart: windowStart)
@@ -689,15 +683,15 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testPastCrossPullRetrievesAllItemsFromSingleWindow() throws {
-        // 数值复现修复场景（镜像生产循环跑两轮下拉）：单窗 12 条，第一拉
-        // 取最近 10 条页满；修复前第二拉查询窗跳到更早一窗（空）立即误判
-        // 历史尽头、丢失 2 条；修复后第二拉先复查同一窗拿走剩余 2 条，再
-        // 向更早窗推进，在更早空窗处尽头判定才成立
+        // Two past pulls over one 12-item window: the first takes the
+        // latest 10, the second must resume the same window for the
+        // remaining 2 before the earlier empty window legitimately ends
+        // history
         let windowStart = makeDate(2026, 10, 1, 0, 0)
         let windowEnd = makeDate(2026, 10, 16, 0, 0)
         let items = makeSequentialEvents(count: 12, firstStart: windowStart)
 
-        // 第一拉：游标=窗上界（今天零点），非复查
+        // First pull: cursor at the window upper bound, not resuming
         let firstPull = mirrorLoadPage(
             direction: .past,
             cursor: windowEnd,
@@ -710,7 +704,7 @@ final class UpcomingSnapshotTests: XCTestCase {
         XCTAssertTrue(firstPull.isResumingWindow)
         XCTAssertFalse(firstPull.isExhausted)
 
-        // 第二拉：游标与复查标记均由第一拉带回，先复查同一窗
+        // Second pull: cursor and resume flag handed over by the first
         let firstIdentifiers = Set(firstPull.collected.map(\.selectionIdentifier))
         let secondPull = mirrorLoadPage(
             direction: .past,
@@ -719,27 +713,25 @@ final class UpcomingSnapshotTests: XCTestCase {
             loadedIdentifiers: firstIdentifiers,
             universe: items
         )
-        // 修复点断言：复查窗带回剩余 2 条（修复前此拉带不回任何条目）
+        // The resume window hands back the 2 leftover items
         XCTAssertEqual(secondPull.collected.count, 2)
         XCTAssertTrue(
             Set(secondPull.collected.map(\.selectionIdentifier))
                 .isDisjoint(with: firstIdentifiers)
         )
-        // 两拉合计拿全窗内 12 条，不重不漏
+        // Both pulls together cover all 12 items exactly once
         let allIdentifiers = firstIdentifiers
             .union(secondPull.collected.map(\.selectionIdentifier))
         XCTAssertEqual(allIdentifiers, Set(items.map(\.selectionIdentifier)))
-        // 更早窗（本替身宇宙中无更早条目）为空且本窗已复查完毕，尽头
-        // 判定此时才成立
         XCTAssertTrue(secondPull.isExhausted)
         XCTAssertNil(secondPull.nextCursor)
         XCTAssertFalse(secondPull.isResumingWindow)
     }
 
     func testFutureCrossPullRetrievesAllItemsFromSingleWindow() throws {
-        // 未来方向同场景回归对照（镜像生产循环跑两轮下拉）：单窗 12 条且
-        // 窗尾即设置上限，第一拉取最早 10 条页满（游标停窗起点），第二拉
-        // 复查同窗拿剩余 2 条后触达上限判尽头，不重不漏
+        // Future-direction mirror of the same scenario: the window tail is
+        // the user limit; the first pull takes the earliest 10, the second
+        // resumes for the last 2 then hits the limit
         let windowStart = makeDate(2026, 10, 16, 0, 0)
         let windowEnd = makeDate(2026, 11, 15, 0, 0)
         let items = makeSequentialEvents(count: 12, firstStart: windowStart)
@@ -771,7 +763,8 @@ final class UpcomingSnapshotTests: XCTestCase {
             Set(secondPull.collected.map(\.selectionIdentifier))
                 .isDisjoint(with: firstIdentifiers)
         )
-        // 两拉合计拿全窗内 12 条，不重不漏；复查耗尽后触达设置上限判尽头
+        // Both pulls cover all 12 exactly once; exhaustion lands on the
+        // user limit after the resume completes
         XCTAssertEqual(
             firstIdentifiers.union(secondPull.collected.map(\.selectionIdentifier)),
             Set(items.map(\.selectionIdentifier))
@@ -782,7 +775,7 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testPastEmptyWindowExhausts() {
-        // 过去端空窗即尽头（沿用「带不回条目即历史起点」启发式）
+        // Empty past window means the historical start
         let windowStart = makeDate(2026, 10, 1, 0, 0)
         let windowEnd = makeDate(2026, 10, 16, 0, 0)
 
@@ -801,8 +794,9 @@ final class UpcomingSnapshotTests: XCTestCase {
 
     @MainActor
     func testPastWindowWithOnlyLoadedReminderAdvances() {
-        // 窗内仅有已加载条目（递归提醒逐窗重复返回同一对象）：不算空窗，
-        // 推进游标继续，避免误判历史尽头
+        // A window of already-loaded items (recurring reminders repeat per
+        // window) is not empty; keep advancing instead of misreading
+        // history's end
         let windowStart = makeDate(2026, 10, 1, 0, 0)
         let windowEnd = makeDate(2026, 10, 16, 0, 0)
         let reminder = makeReminder(2026, 10, 8, 9, 0)
@@ -823,8 +817,8 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testPastResumeWindowWithNoNewItemsAdvances() {
-        // 页满中断后的同窗复查带不回新条目：只代表窗口耗尽，不算尽头，
-        // 推进游标到下一窗
+        // A resume window bringing nothing new only means the window is
+        // used up; advance to the next one
         let windowStart = makeDate(2026, 10, 1, 0, 0)
         let windowEnd = makeDate(2026, 10, 16, 0, 0)
 
@@ -841,7 +835,8 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testPastPageAdvancesAfterConsumingWindowItems() {
-        // 过去窗条目全部取走仍未凑满：游标推进到窗头（即下一窗上界）
+        // Under-full after consuming the window: cursor moves to the
+        // window head (next window's upper bound)
         let windowStart = makeDate(2026, 10, 1, 0, 0)
         let windowEnd = makeDate(2026, 10, 16, 0, 0)
         let items = makeSequentialEvents(count: 3, firstStart: windowStart)
@@ -860,7 +855,7 @@ final class UpcomingSnapshotTests: XCTestCase {
     }
 
     func testPageSizeBoundaryAlreadyFullTakesNothing() {
-        // 页大小边界：本页已凑满时再喂窗结果不取任何条目，仍判页满
+        // An already-full page takes nothing more and stays full
         let windowStart = makeDate(2026, 10, 16, 0, 0)
         let windowEnd = makeDate(2026, 11, 15, 0, 0)
         let items = makeSequentialEvents(count: 5, firstStart: windowStart)
@@ -879,7 +874,7 @@ final class UpcomingSnapshotTests: XCTestCase {
         XCTAssertEqual(step.nextWindowStart, windowStart)
     }
 
-    // MARK: - 夹具
+    // MARK: - Fixtures
 
     private func makeDate(
         _ year: Int,
@@ -907,10 +902,11 @@ final class UpcomingSnapshotTests: XCTestCase {
     ) -> EKEvent {
         let store = EKEventStore()
         let event = EKEvent(eventStore: store)
-        event.title = title ?? (allDay ? "全天事件" : "事件")
+        event.title = title ?? (allDay ? "all-day event" : "event")
         event.startDate = start
         event.endDate = end
-        // 固定事件时区，避免全天事件的日期归一化跟随本机时区漂移
+        // Pin the time zone so all-day date normalization does not drift
+        // with the machine time zone
         event.timeZone = TimeZone(secondsFromGMT: 0)
         event.isAllDay = allDay
         if let ekCalendar = store.defaultCalendarForNewEvents {
@@ -935,7 +931,7 @@ final class UpcomingSnapshotTests: XCTestCase {
         _ minute: Int
     ) -> EKReminder {
         let reminder = EKReminder(eventStore: EKEventStore())
-        reminder.title = "提醒"
+        reminder.title = "reminder"
         reminder.dueDateComponents = DateComponents(
             calendar: calendar,
             timeZone: TimeZone(secondsFromGMT: 0),

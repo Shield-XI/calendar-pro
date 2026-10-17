@@ -1,16 +1,6 @@
 import SwiftUI
 import EventKit
 
-// 文件头：
-// 职责：设置窗口「近期日程」页。承载近期日程版块的显示开关、时间上限、
-//       包含提醒开关与日历/提醒列表勾选来源。
-// 输入：SettingsStore（读写 upcoming* 偏好）与 EventService（日历、
-//       提醒列表数据及授权状态）。
-// 输出：设置项变更经 SettingsStore 即时持久化并驱动弹层近期日程分节刷新。
-// 依赖：SwiftUI、EventKit、AppLocalization（L/LF）。
-// 副作用：每次修改经 SettingsStore.persistMenuBarPreferences 写入
-//         UserDefaults，无其他副作用。
-
 struct UpcomingEventsSettingsView: View {
     @ObservedObject var store: SettingsStore
     @ObservedObject var eventService: EventService

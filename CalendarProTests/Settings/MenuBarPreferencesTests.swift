@@ -98,7 +98,7 @@ final class MenuBarPreferencesTests: XCTestCase {
     }
 
     func testDecodingPreservesExplicitUpcomingIncludeRemindersFalse() throws {
-        // 已存 JSON 显式写入 false 的用户保持 false，不受默认值翻转为 true 影响
+        // Stored explicit false survives the default flip to true
         let storedJSON = """
         {
           "tokens": [{ "token": "date", "isEnabled": true, "order": 0, "style": "short" }],

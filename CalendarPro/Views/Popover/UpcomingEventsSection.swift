@@ -23,12 +23,7 @@ struct UpcomingSnapshot {
     let dayGroups: [UpcomingDayGroup]
     let totalItemCount: Int
 
-    /// 把未来条目按天分组并升序排列。
-    /// - Parameters:
-    ///   - items: 窗口内的统一条目（事件或带到期时间的提醒），无开始日期的条目会被忽略
-    ///   - now: 当前时间，用于生成“今天/明天”天头
-    ///   - calendar: 分组用的日历（测试注入固定时区）
-    /// - Returns: 天组按 startOfDay 升序；同一天内全天条目在前，其余按开始时间升序
+    /// Groups items by day ascending; all-day items come first within a day.
     static func make(
         items: [CalendarItem],
         now: Date,
@@ -77,7 +72,6 @@ struct UpcomingSnapshot {
         )
     }
 
-    /// 天头文案：今天 / 昨天 / 明天，其余按本地化“M月d日”模板格式化。
     private static func dayHeaderText(
         for dayStart: Date,
         now: Date,
@@ -131,11 +125,11 @@ struct UpcomingEventsSection: View {
     let hasMorePast: Bool
     let hasMoreFuture: Bool
     let defaultExpanded: Bool
-    // 分页重置代数：RootPopoverView 每次重置分页递增，本节据此把滚动
-    // 位置显式拉回列表顶（数据重置后滚动偏移会残留）
+    // Bumped on every pagination reset; the section scrolls back to its top
+    // anchor because data resets leave stale scroll offsets behind
     let resetGeneration: Int
-    // 弹层展示代数：PopoverController 每次 show 递增，本节据此在弹层
-    // 重开时按设置重置展开态（视图实例跨打开存活，onAppear 不可靠）
+    // Bumped by PopoverController on every show; drives the expansion reset
+    // on popover reopen (view instances survive reuse, onAppear does not)
     let presentationGeneration: Int
     let timeRefreshCoordinator: TimeRefreshCoordinator
     let selectedEventIdentifier: String?
@@ -189,8 +183,9 @@ struct UpcomingEventsSection: View {
     }
 
     var body: some View {
-        // 快照只在 body 内单次求值，标题计数与展开内容共用同一份分组结果，
-        // 避免 SwiftUI 对计算属性的多次访问触发重复排序与分组
+        // Single evaluation in body: header count and expanded content share
+        // one grouping result, so repeated computed-property access cannot
+        // re-sort and re-group per access
         let snapshot = UpcomingSnapshot.make(
             items: items,
             now: timeRefreshCoordinator.currentDate,
@@ -214,8 +209,6 @@ struct UpcomingEventsSection: View {
         }
     }
 
-    /// 折叠标题按钮。
-    /// - Parameter countText: 右侧计数文案，来自 body 内单次求值的快照
     private func headerButton(countText: String) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.15)) {
@@ -245,9 +238,6 @@ struct UpcomingEventsSection: View {
         .accessibilityIdentifier("calendar-popover-upcoming-toggle")
     }
 
-    /// 标题右侧计数文案：任一端加载中显示 Loading，否则显示已加载条目数
-    /// （条数分页模型下为当前已装载各页的总数）。
-    /// - Parameter snapshot: body 内单次求值的分组快照
     private func countText(for snapshot: UpcomingSnapshot) -> String {
         if isLoadingPast || isLoadingFuture {
             return L("Loading")
@@ -295,8 +285,6 @@ struct UpcomingEventsSection: View {
         }
     }
 
-    /// 空态文案行：无已加载条目且两端都不在加载时显示。留在 ScrollView
-    /// 内渲染（见 expandedContent），下拉加载过去的入口不因空态丢失。
     private var emptyStateRow: some View {
         Text(L("No Events"))
             .font(.system(size: 12))
@@ -353,8 +341,6 @@ struct UpcomingEventsSection: View {
         .accessibilityIdentifier("calendar-popover-upcoming-load-earlier")
     }
 
-    /// 端点加载中的进度行：与哨兵互斥渲染，加载期间哨兵不在视图层级内，
-    /// 不会重复触发。
     private var progressRow: some View {
         HStack {
             Spacer()
@@ -365,11 +351,10 @@ struct UpcomingEventsSection: View {
         .padding(.vertical, 4)
     }
 
-    /// 滚动到底的加载哨兵：渲染出现即触发加载下一页（未来方向）。
-    /// 加载中上方分支换成进度指示、探明未来尽头（hasMoreFuture 为 false，
-    /// 含达设置上限与循环保护）时哨兵都不在视图层级内，不会重复触发；
-    /// 一次加载结束后哨兵重新插入并再次触发 onAppear，内容不足一屏时
-    /// 也能连续加载直到占满视口或探明尽头。
+    // Bottom sentinel: appearing triggers the next future page. It sits out
+    // of the hierarchy while loading or exhausted (mutually exclusive with
+    // progressRow), so it cannot double-fire; re-insertion after a load lets
+    // short pages chain until the viewport fills or the end is reached.
     private var loadFutureTrigger: some View {
         Color.clear
             .frame(height: 1)

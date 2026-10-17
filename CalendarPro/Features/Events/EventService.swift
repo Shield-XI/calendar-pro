@@ -304,19 +304,11 @@ final class EventService: ObservableObject {
         }
     }
     
-    /// 获取 [pastStart, futureEnd] 窗口内的近期日程（事件 + 可选的有到期时间的未完成提醒）。
-    /// - Parameters:
-    ///   - pastStart: 窗口起点（过去端点，初始为今天零点，用户上滚后向前扩展）
-    ///   - futureEnd: 窗口终点（未来端点，now + N 天）
-    ///   - enabledCalendarIDs: 参与聚合的日历 ID，空数组表示全部日历
-    ///   - includeReminders: 是否纳入有到期时间的未完成提醒
-    ///   - enabledReminderCalendarIDs: 参与聚合的提醒列表 ID，空数组表示全部
-    /// - Returns: 按开始时间升序的统一条目
-    /// - Note: EventKit 窗口谓词为重叠语义，会返回开始早于窗口的事件；再按
-    ///   startDate >= pastStart 过滤，开始早于过去端点的多天事件不纳入
-    ///   （多天事件只在其开始日所在的窗口内展示一次）。窗口内已结束的事件
-    ///   同样纳入，供上滚回看过去日程。递归提醒按“天”近似展开（见
-    ///   reminder(_:isDueWithin:windowEnd:calendar:) 的限制说明）。
+    /// Fetches [pastStart, futureEnd) items (events plus optional timed
+    /// incomplete reminders), ascending by start date. Multi-day events that
+    /// started before pastStart are excluded so they show only once; ended
+    /// events inside the window stay for history browsing. Recurring
+    /// reminders use the per-day approximation below.
     func fetchUpcomingCalendarItems(
         pastStart: Date,
         futureEnd: Date,
@@ -356,9 +348,9 @@ final class EventService: ObservableObject {
         }
     }
 
-    /// 拉取窗口内未完成且有到期时间的提醒，并按 calendarItemIdentifier 去重。
-    /// 谓词起始用 nil 兜住基准到期日早于窗口的递归提醒，再在本地按窗口过滤，
-    /// 与 fetchReminders 的处理思路一致。
+    /// Fetches incomplete timed reminders in the window, deduplicated by
+    /// calendarItemIdentifier. The predicate starts at nil so recurring
+    /// reminders based before the window are returned and filtered locally.
     private func fetchUpcomingReminders(
         from windowStart: Date,
         through windowEnd: Date,
@@ -400,18 +392,11 @@ final class EventService: ObservableObject {
         }
     }
 
-    /// 判断事件是否纳入近期日程列表（静态纯函数，供窗口过滤与单元测试复用）。
-    /// - Parameters:
-    ///   - event: 待判定事件，来自 EventKit 重叠语义窗口谓词的查询结果
-    ///   - windowStart: 窗口起点（过去端点）；事件 startDate 与 endDate 均不早于
-    ///     它才纳入——开始早于过去端点的多天事件整体不纳入（只在其开始日
-    ///     所在的窗口内展示一次），窗口起点前已结束的异常时长数据一并挡掉
-    ///   - enabledCalendarIDs: 参与聚合的日历 ID，空数组表示全部日历
-    /// - Returns: 纳入返回 true，否则 false；事件未挂载日历（如测试夹具）时
-    ///   无法匹配指定日历，仅在“全部日历”语义下纳入
-    /// - Note: 双向窗口语义——窗口内已结束的事件同样纳入（供上滚回看过去
-    ///   日程），不再按 endDate > 当前时间过滤；进行中/全天事件的保留语义
-    ///   不变。
+    /// Whether the event belongs in the upcoming list. Both bounds must be at
+    /// or after windowStart so multi-day events started earlier are excluded
+    /// (and pathologically long data ending before the window is dropped).
+    /// An event without a calendar (test fixtures) only matches the
+    /// "all calendars" semantics.
     static func event(
         _ event: EKEvent,
         isWithinUpcomingWindow windowStart: Date,
@@ -426,10 +411,10 @@ final class EventService: ObservableObject {
         return enabledCalendarIDs.isEmpty || enabledCalendarIDs.contains(calendarID)
     }
 
-    /// 判断提醒是否落在 [windowStart, windowEnd) 窗口内。
-    /// 非递归提醒直接比较到期时间；递归提醒从基准到期日与窗口起点中较晚的
-    /// 当天开始逐日近似展开（复用单日判定 isOccurrence）。
-    /// 限制：未处理例外日期（excluded dates）等复杂规则，结果为按天近似。
+    /// Whether the reminder falls in [windowStart, windowEnd). Recurring
+    /// reminders are expanded per-day from the later of base due date and
+    /// window start (reusing isOccurrence); excluded dates are not handled,
+    /// so the result is a daily approximation.
     static func reminder(
         _ reminder: EKReminder,
         isDueWithin windowStart: Date,
