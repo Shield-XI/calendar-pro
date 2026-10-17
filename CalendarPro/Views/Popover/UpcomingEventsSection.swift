@@ -118,7 +118,9 @@ struct UpcomingSnapshot {
 
 struct UpcomingEventsSection: View {
     private enum Metrics {
-        static let expandedMaxHeight: CGFloat = 200
+        // Content area only (header row excluded); matches the board branch
+        // cap so expanding the section never stretches the whole popover
+        static let expandedMaxHeight: CGFloat = 240
         // Scroll-to-top anchor id (view-internal only)
         static let topAnchorID = "upcomingEventsTopAnchor"
     }
