@@ -63,7 +63,11 @@ struct RootPopoverView: View {
     // 分页重置代数：每次重置分页递增，「近期日程」分节据此把滚动位置
     // 显式拉回列表顶（数据重置后滚动偏移会残留）
     @State private var upcomingResetGeneration: Int = 0
-    @State private var upcomingRequestID = UUID()
+    // 分方向请求竞态 ID：各方向入口自增、完成块校验并只复位自己的在途
+    // 标记，两方向互不作废（下拉加载过去与底部哨兵加载未来可真并发）；
+    // 重置/清空时统一递增两个 ID 作废所有在途加载
+    @State private var upcomingPastRequestID = UUID()
+    @State private var upcomingFutureRequestID = UUID()
     @State private var almanacDescriptor: AlmanacDescriptor?
     @State private var weatherDescriptor: WeatherDescriptor?
     @State private var isLoadingWeather: Bool = false
@@ -626,8 +630,10 @@ struct RootPopoverView: View {
             eventService.fetchReminderCalendars()
         }
 
-        // 重置先于首载：旧请求结果由请求 ID 竞态守卫丢弃
-        upcomingRequestID = UUID()
+        // 重置先于首载：递增两方向请求 ID 作废所有在途加载，旧请求结果
+        // 由各自方向的竞态守卫丢弃
+        upcomingPastRequestID = UUID()
+        upcomingFutureRequestID = UUID()
         upcomingItems = []
         isLoadingUpcomingPast = false
         isLoadingUpcomingFuture = false
@@ -643,9 +649,12 @@ struct RootPopoverView: View {
 
     /// 加载一页近期日程：按方向从游标起做「30 天窗循环查询 + 切片推进」，
     /// 直到凑满页大小、探明尽头或达到单页窗口循环上限（12 窗，约 360 天，
-    /// 防极端数据下无限查询）。加载中同方向忽略重复触发；重置产生的过期
-    /// 结果由请求 ID 竞态守卫兜底丢弃。EventKit 查询薄层沿用
-    /// fetchUpcomingCalendarItems 的既有谓词与过滤（半开区间窗口逐窗平铺）。
+    /// 防极端数据下无限查询）。加载中同方向忽略重复触发，两方向互不互斥、
+    /// 可真并发（下拉加载过去与底部哨兵加载未来各自的进度行/哨兵互不干
+    /// 扰）；请求 ID 按方向分域自增与校验，跨方向的在途加载互不作废，
+    /// 重置产生的过期结果由各自方向的竞态守卫兜底丢弃。EventKit 查询
+    /// 薄层沿用 fetchUpcomingCalendarItems 的既有谓词与过滤（半开区间
+    /// 窗口逐窗平铺）。
     private func loadUpcomingPage(direction: UpcomingPageDirection) {
         let preferences = settingsStore.menuBarPreferences
         guard let startCursor = direction == .future
@@ -654,14 +663,20 @@ struct RootPopoverView: View {
             return
         }
 
-        // 同方向 in-flight 防重：加载中忽略重复触发
+        // 同方向 in-flight 防重：加载中忽略重复触发；请求 ID 写入本方向
+        // 竞态域，另一方向的自增与本方向无关
+        let requestID: UUID
         switch direction {
         case .past:
             guard !isLoadingUpcomingPast else { return }
             isLoadingUpcomingPast = true
+            requestID = UUID()
+            upcomingPastRequestID = requestID
         case .future:
             guard !isLoadingUpcomingFuture else { return }
             isLoadingUpcomingFuture = true
+            requestID = UUID()
+            upcomingFutureRequestID = requestID
         }
 
         let now = timeRefreshCoordinator.currentDate
@@ -671,8 +686,6 @@ struct RootPopoverView: View {
             ? displayCalendar.date(byAdding: .day, value: preferences.upcomingDayLimit, to: now)
             : nil
 
-        let requestID = UUID()
-        upcomingRequestID = requestID
         // 已加载身份快照：页界同刻条目与页满后同窗复查的去重依据
         var loadedIdentifiers = Set(upcomingItems.map(\.selectionIdentifier))
         let enabledCalendarIDs = preferences.upcomingEnabledCalendarIDs
@@ -754,19 +767,22 @@ struct RootPopoverView: View {
             // 循环上限触达仍未凑满：返回已有并视为尽头（游标置 nil）
             let hitWindowCap = !isExhausted
                 && collected.count < RootPopoverView.upcomingPageSize
+            let nextCursor: Date? = (isExhausted || hitWindowCap) ? nil : cursor
 
             await MainActor.run {
-                guard upcomingRequestID == requestID else { return }
-                upcomingItems.append(contentsOf: collected)
-                let nextCursor: Date? = (isExhausted || hitWindowCap) ? nil : cursor
+                // 只校验本方向竞态域：另一方向入口自增自己的 ID 不作废
+                // 本方向结果，先发方向不会被后发方向连带跳过复位
                 switch direction {
                 case .past:
+                    guard upcomingPastRequestID == requestID else { return }
                     upcomingPastCursor = nextCursor
                     isLoadingUpcomingPast = false
                 case .future:
+                    guard upcomingFutureRequestID == requestID else { return }
                     upcomingFutureCursor = nextCursor
                     isLoadingUpcomingFuture = false
                 }
+                upcomingItems.append(contentsOf: collected)
             }
         }
     }
@@ -783,7 +799,8 @@ struct RootPopoverView: View {
     }
 
     private func clearLoadedUpcoming() {
-        upcomingRequestID = UUID()
+        upcomingPastRequestID = UUID()
+        upcomingFutureRequestID = UUID()
         upcomingItems = []
         isLoadingUpcomingPast = false
         isLoadingUpcomingFuture = false
