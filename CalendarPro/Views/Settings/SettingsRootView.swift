@@ -5,6 +5,7 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable {
     case menuBar
     case pomodoro
     case events
+    case reminders
     case upcoming
     case region
     case about
@@ -17,6 +18,7 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable {
         case .menuBar: return "menubar.rectangle"
         case .pomodoro: return "timer"
         case .events: return "calendar.badge.clock"
+        case .reminders: return "checklist"
         case .upcoming: return "clock"
         case .region: return "globe"
         case .about: return "info.circle.fill"
@@ -29,6 +31,7 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable {
         case .menuBar: return L("Menu Bar")
         case .pomodoro: return L("Pomodoro")
         case .events: return L("Events")
+        case .reminders: return L("Reminders")
         case .upcoming: return L("All Events")
         case .region: return L("Regions and Holidays")
         case .about: return L("About")
@@ -45,6 +48,8 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable {
             return L("Focus rhythm and statistics")
         case .events:
             return L("Manage Calendar Sources")
+        case .reminders:
+            return L("Manage Reminders Board")
         case .upcoming:
             return L("Configure All Events")
         case .region:
@@ -64,6 +69,8 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable {
             return L("Pomodoro Detail Description")
         case .events:
             return L("Events Detail Description")
+        case .reminders:
+            return L("Reminders Detail Description")
         case .upcoming:
             return L("All Events Detail Description")
         case .region:
@@ -198,6 +205,8 @@ struct SettingsRootView: View {
             PomodoroSettingsView(store: store, statsStore: pomodoroStatsStore)
         case .events:
             EventsSettingsView(store: store, eventService: eventService)
+        case .reminders:
+            RemindersSettingsView(store: store, eventService: eventService)
         case .upcoming:
             UpcomingEventsSettingsView(store: store, eventService: eventService)
         case .region:

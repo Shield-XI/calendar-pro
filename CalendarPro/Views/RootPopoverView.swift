@@ -51,6 +51,7 @@ struct RootPopoverView: View {
 
     @State private var itemsForSelectedDate: [CalendarItem] = []
     @State private var isLoadingEvents: Bool = false
+    @State private var boardReminders: [EKReminder] = []
     @State private var upcomingItems: [CalendarItem] = []
     @State private var isLoadingUpcomingPast: Bool = false
     @State private var isLoadingUpcomingFuture: Bool = false
@@ -84,6 +85,7 @@ struct RootPopoverView: View {
     @State private var weatherDetailTask: Task<Void, Never>?
     @State private var weatherRequestID = UUID()
     @State private var weatherDetailRequestID = UUID()
+    @State private var boardRetentionRefreshTask: Task<Void, Never>?
     @State private var lastWeatherRefreshTime: Date?
     @State private var lastWeatherRequestedDate: Date?
     @State private var isLoadingWeatherDetails = false
@@ -200,6 +202,7 @@ struct RootPopoverView: View {
                 // onAppear does not re-fire reliably on reused popovers
                 resetUpcomingPaginationAndLoadFirstPage()
                 refreshInfoStrips()
+                loadBoard()
             }
             .onChange(of: viewModel.popoverPresentationGeneration) { _, _ in
                 // Explicit reopen channel: PopoverController bumps the
@@ -216,15 +219,18 @@ struct RootPopoverView: View {
                     eventService.fetchReminderCalendars()
                 }
                 refreshEventsForCurrentSelection()
+                loadBoard()
                 resetUpcomingPaginationAndLoadFirstPage()
             }
             .onReceive(settingsStore.$menuBarPreferences.dropFirst()) { _ in
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
                 resetUpcomingPaginationAndLoadFirstPage()
                 refreshInfoStrips()
+                loadBoard()
             }
             .onReceive(eventService.$storeChangeRevision.dropFirst()) { _ in
                 refreshEventsForCurrentSelection()
+                loadBoard()
                 resetUpcomingPaginationAndLoadFirstPage()
             }
             .onReceive(viewModel.$selectedDate.dropFirst()) { newDate in
@@ -248,6 +254,8 @@ struct RootPopoverView: View {
                 // change; start over from page one
                 resetUpcomingPaginationAndLoadFirstPage()
                 refreshInfoStrips()
+                // Day change: overdue colors and due texts must be recomputed.
+                loadBoard()
             }
             .onDisappear {
                 cancelWeatherLoad()
@@ -300,6 +308,14 @@ struct RootPopoverView: View {
             showVacationGuideButton: showVacationGuideButton,
             isVacationGuideEnabled: isVacationGuideEnabled,
             vacationGuideDisabledReason: vacationGuideDisabledReason,
+            showRemindersBoard: settingsStore.menuBarPreferences.showRemindersBoard,
+            boardReminders: boardReminders,
+            boardGroupingMode: settingsStore.menuBarPreferences.boardGroupingMode,
+            boardColorMode: settingsStore.menuBarPreferences.boardColorMode,
+            boardColorPreferences: settingsStore.menuBarPreferences.boardColorPreferences,
+            boardShowCompleted: settingsStore.menuBarPreferences.boardShowCompleted,
+            boardCompletedRetentionSeconds:
+                settingsStore.menuBarPreferences.boardCompletedRetentionSeconds,
             canCreateEvent: canCreateEvent,
             canCreateReminder: canCreateReminder,
             onPreviousMonth: {
@@ -866,6 +882,8 @@ struct RootPopoverView: View {
         do {
             try eventService.toggleReminderCompletion(reminder)
             refreshEventsForCurrentSelection()
+            // Shared toggle entry with the event list; keep the board in sync.
+            loadBoard()
             // Completed reminders drop straight out of the loaded pages;
             // cursors and scroll stay put, a full reload waits for the next
             // open or data refresh
@@ -873,6 +891,79 @@ struct RootPopoverView: View {
             upcomingItems.removeAll { $0.selectionIdentifier == toggledIdentifier }
         } catch {
             print("Failed to toggle reminder completion: \(error)")
+        }
+    }
+
+    /// Loads board reminders; when show-completed is off, completed rows inside
+    /// the retention window are kept visible until a delayed refresh removes them.
+    private func loadBoard() {
+        let preferences = settingsStore.menuBarPreferences
+
+        guard preferences.showRemindersBoard, eventService.remindersAuthorized else {
+            boardReminders = []
+            return
+        }
+
+        let enabledCalendarIDs = preferences.boardEnabledReminderCalendarIDs
+        let includeCompleted = preferences.boardShowCompleted
+        let retentionSeconds = preferences.boardCompletedRetentionSeconds
+        // A window start avoids pulling the full completed history when only
+        // the retention window matters.
+        let recentCompletedWindowStart = includeCompleted || retentionSeconds <= 0
+            ? nil
+            : Date().addingTimeInterval(-Double(retentionSeconds))
+
+        Task {
+            let reminders = await eventService.fetchBoardReminders(
+                enabledCalendarIDs: enabledCalendarIDs,
+                includeCompleted: includeCompleted,
+                recentCompletedWindowStart: recentCompletedWindowStart
+            )
+            await MainActor.run {
+                // Discard the result when preferences changed during the fetch;
+                // the change itself re-triggers a load.
+                let currentPreferences = settingsStore.menuBarPreferences
+                guard currentPreferences.showRemindersBoard,
+                      currentPreferences.boardEnabledReminderCalendarIDs == enabledCalendarIDs,
+                      currentPreferences.boardShowCompleted == includeCompleted,
+                      currentPreferences.boardCompletedRetentionSeconds == retentionSeconds
+                else { return }
+                boardReminders = reminders
+                scheduleBoardRetentionRefresh(after: reminders)
+            }
+        }
+    }
+
+    /// Schedules one board reload when the retention window expires so kept
+    /// rows disappear on time; only the earliest in-window completion matters
+    /// and any previous task is cancelled first.
+    private func scheduleBoardRetentionRefresh(after reminders: [EKReminder]) {
+        boardRetentionRefreshTask?.cancel()
+
+        let preferences = settingsStore.menuBarPreferences
+        guard !preferences.boardShowCompleted else { return }
+        let retentionSeconds = preferences.boardCompletedRetentionSeconds
+        guard retentionSeconds > 0 else { return }
+
+        let windowStart = Date().addingTimeInterval(-Double(retentionSeconds))
+        let earliestCompletedDate = reminders
+            .filter { $0.isCompleted && ($0.completionDate.map { $0 > windowStart } ?? false) }
+            .compactMap(\.completionDate)
+            .min()
+        guard let earliestCompletedDate else { return }
+
+        let remaining = Double(retentionSeconds)
+            - Date().timeIntervalSince(earliestCompletedDate)
+        guard remaining > 0.05 else { return }
+
+        boardRetentionRefreshTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+            } catch {
+                // Cancelled by a newer schedule; the new task takes over.
+                return
+            }
+            loadBoard()
         }
     }
 

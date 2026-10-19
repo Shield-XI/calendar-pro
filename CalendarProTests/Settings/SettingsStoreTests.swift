@@ -157,6 +157,39 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(store.menuBarPreferences.enabledReminderCalendarIDs.isEmpty)
     }
 
+    func testUpcomingAndBoardPreferencesPersistIndependently() {
+        let userDefaults = makeIsolatedUserDefaults()
+        let store = makeStore(userDefaults: userDefaults)
+
+        store.setBoardGroupingMode(.priority)
+        store.setBoardCompletedRetentionSeconds(10)
+        store.setUpcomingDayLimit(180)
+        store.setUpcomingIncludeReminders(false)
+        store.setUpcomingDefaultExpanded(false)
+        store.setShowUpcomingSection(false)
+
+        let reloaded = makeStore(userDefaults: userDefaults)
+        XCTAssertTrue(reloaded.menuBarPreferences.showRemindersBoard)
+        XCTAssertEqual(reloaded.menuBarPreferences.boardGroupingMode, .priority)
+        XCTAssertEqual(reloaded.menuBarPreferences.boardCompletedRetentionSeconds, 10)
+        XCTAssertFalse(reloaded.menuBarPreferences.showUpcomingSection)
+        XCTAssertEqual(reloaded.menuBarPreferences.upcomingDayLimit, 180)
+        XCTAssertFalse(reloaded.menuBarPreferences.upcomingIncludeReminders)
+        XCTAssertFalse(reloaded.menuBarPreferences.upcomingDefaultExpanded)
+
+        reloaded.setShowRemindersBoard(false)
+        reloaded.setShowUpcomingSection(true)
+
+        let finalStore = makeStore(userDefaults: userDefaults)
+        XCTAssertFalse(finalStore.menuBarPreferences.showRemindersBoard)
+        XCTAssertEqual(finalStore.menuBarPreferences.boardGroupingMode, .priority)
+        XCTAssertEqual(finalStore.menuBarPreferences.boardCompletedRetentionSeconds, 10)
+        XCTAssertTrue(finalStore.menuBarPreferences.showUpcomingSection)
+        XCTAssertEqual(finalStore.menuBarPreferences.upcomingDayLimit, 180)
+        XCTAssertFalse(finalStore.menuBarPreferences.upcomingIncludeReminders)
+        XCTAssertFalse(finalStore.menuBarPreferences.upcomingDefaultExpanded)
+    }
+
     func testSetUpcomingSectionPreferencesPersist() {
         let suiteName = #function
         let userDefaults = makeIsolatedUserDefaults(name: suiteName)
@@ -424,6 +457,151 @@ final class SettingsStoreTests: XCTestCase {
         store.setWeatherProvider(.sevenTimer)
         XCTAssertEqual(store.menuBarPreferences.weatherProvider, .sevenTimer)
         XCTAssertEqual(store.weatherProviderConfiguration(), .sevenTimer)
+    }
+
+    func testSetShowRemindersBoardPersists() {
+        let suiteName = #function
+        let userDefaults = makeIsolatedUserDefaults(name: suiteName)
+        let store = makeStore(userDefaults: userDefaults)
+
+        XCTAssertTrue(store.menuBarPreferences.showRemindersBoard)
+
+        store.setShowRemindersBoard(false)
+        XCTAssertFalse(store.menuBarPreferences.showRemindersBoard)
+
+        let reloaded = makeStore(userDefaults: userDefaults)
+        XCTAssertFalse(reloaded.menuBarPreferences.showRemindersBoard)
+    }
+
+    func testSetBoardReminderCalendarEnabledDisablesSingleListWhenEmptyMeansAllSelected() {
+        let suiteName = #function
+        let userDefaults = makeIsolatedUserDefaults(name: suiteName)
+        let store = makeStore(userDefaults: userDefaults)
+
+        store.setBoardReminderCalendarEnabled(
+            false,
+            calendarID: "reminder-2",
+            allCalendarIDs: ["reminder-1", "reminder-2"]
+        )
+
+        XCTAssertEqual(store.menuBarPreferences.boardEnabledReminderCalendarIDs, ["reminder-1"])
+
+        store.setBoardReminderCalendarEnabled(
+            true,
+            calendarID: "reminder-2",
+            allCalendarIDs: ["reminder-1", "reminder-2"]
+        )
+
+        XCTAssertTrue(store.menuBarPreferences.boardEnabledReminderCalendarIDs.isEmpty)
+    }
+
+    func testBoardGroupingModeShowCompletedAndColorModePersist() {
+        let suiteName = #function
+        let userDefaults = makeIsolatedUserDefaults(name: suiteName)
+        let store = makeStore(userDefaults: userDefaults)
+
+        XCTAssertEqual(store.menuBarPreferences.boardGroupingMode, .list)
+        XCTAssertFalse(store.menuBarPreferences.boardShowCompleted)
+        XCTAssertEqual(store.menuBarPreferences.boardColorMode, .overdue)
+
+        store.setBoardGroupingMode(.priority)
+        store.setBoardShowCompleted(true)
+        store.setBoardColorMode(.timeBucket)
+
+        let reloaded = makeStore(userDefaults: userDefaults)
+        XCTAssertEqual(reloaded.menuBarPreferences.boardGroupingMode, .priority)
+        XCTAssertTrue(reloaded.menuBarPreferences.boardShowCompleted)
+        XCTAssertEqual(reloaded.menuBarPreferences.boardColorMode, .timeBucket)
+    }
+
+    func testBoardCompletedRetentionSecondsPersist() {
+        let suiteName = #function
+        let userDefaults = makeIsolatedUserDefaults(name: suiteName)
+        let store = makeStore(userDefaults: userDefaults)
+
+        XCTAssertEqual(store.menuBarPreferences.boardCompletedRetentionSeconds, 3)
+
+        store.setBoardCompletedRetentionSeconds(10)
+
+        let reloaded = makeStore(userDefaults: userDefaults)
+        XCTAssertEqual(reloaded.menuBarPreferences.boardCompletedRetentionSeconds, 10)
+    }
+
+    func testSetBoardColorPresetAppliesPaletteAndPersists() {
+        let suiteName = #function
+        let userDefaults = makeIsolatedUserDefaults(name: suiteName)
+        let store = makeStore(userDefaults: userDefaults)
+
+        XCTAssertEqual(store.menuBarPreferences.boardColorPreset, .classic)
+
+        store.setBoardColorPreset(.warm)
+
+        let warmPalette = BoardColorPreset.warm.colorPreferences
+        XCTAssertEqual(store.menuBarPreferences.boardColorPreferences, warmPalette)
+
+        let reloaded = makeStore(userDefaults: userDefaults)
+        XCTAssertEqual(reloaded.menuBarPreferences.boardColorPreset, .warm)
+        XCTAssertEqual(reloaded.menuBarPreferences.boardColorPreferences, warmPalette)
+    }
+
+    func testSetBoardColorHexTransitionsPresetToCustomAndPersists() {
+        let suiteName = #function
+        let userDefaults = makeIsolatedUserDefaults(name: suiteName)
+        let store = makeStore(userDefaults: userDefaults)
+
+        store.setBoardColorPreset(.cool)
+        XCTAssertEqual(store.menuBarPreferences.boardColorPreset, .cool)
+
+        store.setBoardColorHex("#123456", for: .overdue)
+
+        XCTAssertEqual(store.menuBarPreferences.boardColorPreset, .custom)
+        XCTAssertEqual(
+            store.menuBarPreferences.boardColorPreferences.colorHex(for: .overdue),
+            "#123456"
+        )
+        XCTAssertEqual(
+            store.menuBarPreferences.boardColorPreferences.colorHex(for: .today),
+            BoardColorPreset.cool.colorPreferences?.colorHex(for: .today)
+        )
+
+        let reloaded = makeStore(userDefaults: userDefaults)
+        XCTAssertEqual(reloaded.menuBarPreferences.boardColorPreset, .custom)
+        XCTAssertEqual(
+            reloaded.menuBarPreferences.boardColorPreferences.colorHex(for: .overdue),
+            "#123456"
+        )
+    }
+
+    func testMenuBarPreferencesDecodeFillsBoardDefaultsForLegacyData() throws {
+        let suiteName = #function
+        let userDefaults = makeIsolatedUserDefaults(name: suiteName)
+        let legacyJSON = """
+        {
+          "tokens": [
+            {"token": "date", "isEnabled": true, "order": 0, "style": "short"}
+          ],
+          "separator": " ",
+          "showLunarInMenuBar": false,
+          "activeRegionIDs": [],
+          "enabledHolidayIDs": [],
+          "weekStart": "monday",
+          "showEvents": true,
+          "enabledCalendarIDs": [],
+          "showReminders": true,
+          "enabledReminderCalendarIDs": []
+        }
+        """
+        try userDefaults.set(Data(legacyJSON.utf8), forKey: "menuBarPreferences")
+
+        let store = makeStore(userDefaults: userDefaults)
+
+        XCTAssertTrue(store.menuBarPreferences.showRemindersBoard)
+        XCTAssertEqual(store.menuBarPreferences.boardGroupingMode, .list)
+        XCTAssertFalse(store.menuBarPreferences.boardShowCompleted)
+        XCTAssertEqual(store.menuBarPreferences.boardCompletedRetentionSeconds, 3)
+        XCTAssertEqual(store.menuBarPreferences.boardColorMode, .overdue)
+        XCTAssertEqual(store.menuBarPreferences.boardColorPreferences, .classic)
+        XCTAssertEqual(store.menuBarPreferences.boardColorPreset, .classic)
     }
 
     private func makeIsolatedUserDefaults(name: String = #function) -> UserDefaults {

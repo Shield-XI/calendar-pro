@@ -160,8 +160,8 @@ final class PopoverController: NSObject, NSPopoverDelegate {
     }
 
     private func updateContentView() {
-        // Wrap in a ScrollView: once the popover height is clamped, overflow
-        // scrolls inside instead of pushing the anchored window off-screen.
+        // 内容包一层 ScrollView：弹层高度被屏幕钳制后，超出的内容在弹层内滚动，
+        // 而不是把弹层顶出屏幕上缘。
         let rootPopoverView =
             RootPopoverView(
                 settingsStore: settingsStore,
@@ -254,6 +254,9 @@ final class PopoverController: NSObject, NSPopoverDelegate {
         }
     }
 
+    /// 显示前按状态栏按钮下方的屏幕可用空间收紧弹层高度：内容超出时弹层取
+    /// 上限高度、内部 ScrollView 滚动；后续内容变化同样受上限约束，
+    /// 不再把弹层顶出屏幕上缘。
     private func applyScreenHeightLimit(relativeTo button: NSView) {
         guard let window = button.window else { return }
         guard let screen = window.screen ?? NSScreen.main else { return }
@@ -265,8 +268,7 @@ final class PopoverController: NSObject, NSPopoverDelegate {
             anchorButtonFrameInScreen: buttonFrameInScreen,
             visibleFrame: screen.visibleFrame
         )
-        // Cap at available height, not the current clamp, so expanding a
-        // section can still grow within that space.
+        // 上限取可用高度而非当前 clamp 结果，展开分节后弹层仍可在可用空间内增长。
         hostingController?.maximumContentHeight = PopoverSizing.availableHeight(
             anchorButtonFrameInScreen: buttonFrameInScreen,
             visibleFrame: screen.visibleFrame

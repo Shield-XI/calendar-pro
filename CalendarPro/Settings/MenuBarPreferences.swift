@@ -175,6 +175,16 @@ struct MenuBarPreferences: Codable, Equatable {
     var qWeatherAPIKey: String = ""
     var showUpcomingIndicator: Bool
     var upcomingReminderMinutes: Int
+    var showRemindersBoard: Bool = true
+    var boardEnabledReminderCalendarIDs: [String] = []
+    var boardGroupingMode: RemindersBoardGroupingMode = .list
+    var boardShowCompleted: Bool = false
+    /// Seconds a completed row stays visible; 0 hides immediately.
+    /// Legacy data missing this key decodes to the default of 3.
+    var boardCompletedRetentionSeconds: Int = 3
+    var boardColorMode: RemindersBoardColorMode = .overdue
+    var boardColorPreferences: BoardColorPreferences = .classic
+    var boardColorPreset: BoardColorPreset = .classic
     var showUpcomingSection: Bool
     var upcomingDayLimit: Int
     var upcomingIncludeReminders: Bool
@@ -333,6 +343,14 @@ extension MenuBarPreferences {
         case qWeatherAPIKey
         case showUpcomingIndicator
         case upcomingReminderMinutes
+        case showRemindersBoard
+        case boardEnabledReminderCalendarIDs
+        case boardGroupingMode
+        case boardShowCompleted
+        case boardCompletedRetentionSeconds
+        case boardColorMode
+        case boardColorPreferences
+        case boardColorPreset
         case showUpcomingSection
         case upcomingDayLimit
         case upcomingIncludeReminders
@@ -369,6 +387,32 @@ extension MenuBarPreferences {
             qWeatherAPIKey: try container.decodeIfPresent(String.self, forKey: .qWeatherAPIKey) ?? "",
             showUpcomingIndicator: try container.decodeIfPresent(Bool.self, forKey: .showUpcomingIndicator) ?? true,
             upcomingReminderMinutes: try container.decodeIfPresent(Int.self, forKey: .upcomingReminderMinutes) ?? 15,
+            showRemindersBoard: try container.decodeIfPresent(Bool.self, forKey: .showRemindersBoard) ?? true,
+            boardEnabledReminderCalendarIDs: try container.decodeIfPresent(
+                [String].self,
+                forKey: .boardEnabledReminderCalendarIDs
+            ) ?? [],
+            boardGroupingMode: try container.decodeIfPresent(
+                RemindersBoardGroupingMode.self,
+                forKey: .boardGroupingMode
+            ) ?? .list,
+            boardShowCompleted: try container.decodeIfPresent(Bool.self, forKey: .boardShowCompleted) ?? false,
+            boardCompletedRetentionSeconds: try container.decodeIfPresent(
+                Int.self,
+                forKey: .boardCompletedRetentionSeconds
+            ) ?? 3,
+            boardColorMode: try container.decodeIfPresent(
+                RemindersBoardColorMode.self,
+                forKey: .boardColorMode
+            ) ?? .overdue,
+            boardColorPreferences: try container.decodeIfPresent(
+                BoardColorPreferences.self,
+                forKey: .boardColorPreferences
+            ) ?? .classic,
+            boardColorPreset: try container.decodeIfPresent(
+                BoardColorPreset.self,
+                forKey: .boardColorPreset
+            ) ?? .classic,
             showUpcomingSection: try container.decodeIfPresent(Bool.self, forKey: .showUpcomingSection) ?? true,
             upcomingDayLimit: try container.decodeIfPresent(Int.self, forKey: .upcomingDayLimit) ?? 90,
             // decodeIfPresent, not a plain default: stored explicit false must
@@ -424,6 +468,17 @@ extension MenuBarPreferences {
         try container.encode(qWeatherAPIKey, forKey: .qWeatherAPIKey)
         try container.encode(showUpcomingIndicator, forKey: .showUpcomingIndicator)
         try container.encode(upcomingReminderMinutes, forKey: .upcomingReminderMinutes)
+        try container.encode(showRemindersBoard, forKey: .showRemindersBoard)
+        try container.encode(boardEnabledReminderCalendarIDs, forKey: .boardEnabledReminderCalendarIDs)
+        try container.encode(boardGroupingMode, forKey: .boardGroupingMode)
+        try container.encode(boardShowCompleted, forKey: .boardShowCompleted)
+        try container.encode(
+            boardCompletedRetentionSeconds,
+            forKey: .boardCompletedRetentionSeconds
+        )
+        try container.encode(boardColorMode, forKey: .boardColorMode)
+        try container.encode(boardColorPreferences, forKey: .boardColorPreferences)
+        try container.encode(boardColorPreset, forKey: .boardColorPreset)
         try container.encode(showUpcomingSection, forKey: .showUpcomingSection)
         try container.encode(upcomingDayLimit, forKey: .upcomingDayLimit)
         try container.encode(upcomingIncludeReminders, forKey: .upcomingIncludeReminders)

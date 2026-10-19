@@ -64,6 +64,13 @@ struct CalendarPopoverView: View {
     let showVacationGuideButton: Bool
     let isVacationGuideEnabled: Bool
     let vacationGuideDisabledReason: String?
+    let showRemindersBoard: Bool
+    let boardReminders: [EKReminder]
+    let boardGroupingMode: RemindersBoardGroupingMode
+    let boardColorMode: RemindersBoardColorMode
+    let boardColorPreferences: BoardColorPreferences
+    let boardShowCompleted: Bool
+    let boardCompletedRetentionSeconds: Int
     let canCreateEvent: Bool
     let canCreateReminder: Bool
     let onPreviousMonth: () -> Void
@@ -167,6 +174,8 @@ struct CalendarPopoverView: View {
 
             eventsSection
 
+            remindersBoardSection
+
             if showUpcomingSection {
                 Divider()
                     .padding(.horizontal, -PopoverSurfaceMetrics.outerPadding)
@@ -259,6 +268,25 @@ struct CalendarPopoverView: View {
                 )
                 .frame(maxHeight: 200)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var remindersBoardSection: some View {
+        if showRemindersBoard {
+            Divider()
+                .padding(.horizontal, -PopoverSurfaceMetrics.outerPadding)
+
+            RemindersBoardSection(
+                reminders: boardReminders,
+                groupingMode: boardGroupingMode,
+                colorMode: boardColorMode,
+                colorPreferences: boardColorPreferences,
+                showCompleted: boardShowCompleted,
+                completedRetentionSeconds: boardCompletedRetentionSeconds,
+                timeRefreshCoordinator: timeRefreshCoordinator,
+                onToggleReminder: onToggleReminder
+            )
         }
     }
 

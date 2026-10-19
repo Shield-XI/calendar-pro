@@ -1,21 +1,16 @@
 import AppKit
 import SwiftUI
 
-// Popover size constraints: caps the popover height to the screen space
-// below the status bar button so content growth scrolls inside the popover
-// instead of pushing the anchored window past the top of the screen.
-
 enum PopoverSizing {
-    /// Safety gap between the popover and the status bar button (arrow gap
-    /// plus screen-edge margin).
+    /// Gap reserved between the status bar button and the popover
+    /// (NSPopover arrow gap plus a top-edge margin).
     static let verticalSpacingMargin: CGFloat = 12
 
-    /// Fallback height for degenerate layouts; matches
-    /// EventDetailWindowSizing.minHeight.
+    /// Popover height floor for degenerate screen layouts.
     static let minimumHeight: CGFloat = 280
 
-    /// Maximum usable popover height below the anchor button; falls back to
-    /// `minimumHeight` when the button sits below the visible frame.
+    /// Maximum usable popover height below the anchor button, with the
+    /// spacing margin subtracted and the floor applied.
     static func availableHeight(
         anchorButtonFrameInScreen: NSRect,
         visibleFrame: NSRect
@@ -24,8 +19,8 @@ enum PopoverSizing {
         return max(spaceBelowButton - verticalSpacingMargin, minimumHeight)
     }
 
-    /// Clamps the content fitting size to the available height; overflow
-    /// scrolls inside the popover's own ScrollView. Width is kept as-is.
+    /// Clamps the popover height to the space below the anchor button; any
+    /// overflow is handled by the popover's internal ScrollView.
     static func clampedContentSize(
         fittingSize: NSSize,
         anchorButtonFrameInScreen: NSRect,
@@ -42,13 +37,12 @@ enum PopoverSizing {
     }
 }
 
-/// Hosting controller that clamps the popover height. With
-/// sizingOptions = .preferredContentSize the popover resizes with its
-/// content (e.g. when a section expands); overriding the read path keeps
-/// that growth within maximumContentHeight so the window stays on screen.
+/// SwiftUI host that keeps the popover on screen: the popover resizes with the
+/// SwiftUI content (e.g. expanding board sections), so the preferredContentSize
+/// getter clamps the height to maximumContentHeight. Writes still go through
+/// super, so behavior is native until a limit is set.
 final class PopoverSizingHostingController: NSHostingController<AnyView> {
-    /// Height cap; nil means uncapped (before the first presentation, where
-    /// PopoverSizing.availableHeight writes it on every show).
+    /// Height cap; nil means no limit yet (before the first show).
     var maximumContentHeight: CGFloat?
 
     override var preferredContentSize: NSSize {

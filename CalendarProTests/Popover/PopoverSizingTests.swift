@@ -4,8 +4,7 @@ import XCTest
 
 @MainActor
 final class PopoverSizingTests: XCTestCase {
-    // Typical menu bar layout: 1440x900 screen, 25pt menu bar, button bottom
-    // edge at y=850.
+    // Typical menu bar: 1440x900 screen, 25pt menu bar, button bottom at y=850.
     private let buttonFrameInScreen = NSRect(x: 1200, y: 850, width: 44, height: 25)
     private let visibleFrame = NSRect(x: 0, y: 0, width: 1440, height: 875)
 
