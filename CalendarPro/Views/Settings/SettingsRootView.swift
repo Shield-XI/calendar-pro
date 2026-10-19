@@ -30,9 +30,9 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable {
         case .general: return L("General")
         case .menuBar: return L("Menu Bar")
         case .pomodoro: return L("Pomodoro")
-        case .events: return L("Events")
+        case .events: return L("Single Day Events")
         case .reminders: return L("Reminders")
-        case .upcoming: return L("All Events")
+        case .upcoming: return L("Event Overview")
         case .region: return L("Regions and Holidays")
         case .about: return L("About")
         }
@@ -47,11 +47,11 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable {
         case .pomodoro:
             return L("Focus rhythm and statistics")
         case .events:
-            return L("Manage Calendar Sources")
+            return L("Configure Single Day View")
         case .reminders:
             return L("Manage Reminders Board")
         case .upcoming:
-            return L("Configure All Events")
+            return L("Configure Overview View")
         case .region:
             return L("Configure Holiday Data")
         case .about:
@@ -68,11 +68,11 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable {
         case .pomodoro:
             return L("Pomodoro Detail Description")
         case .events:
-            return L("Events Detail Description")
+            return L("Single Day Settings Description")
         case .reminders:
             return L("Reminders Detail Description")
         case .upcoming:
-            return L("All Events Detail Description")
+            return L("Overview Settings Description")
         case .region:
             return L("Regions Detail Description")
         case .about:

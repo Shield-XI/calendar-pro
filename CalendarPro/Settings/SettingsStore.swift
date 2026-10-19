@@ -377,6 +377,13 @@ final class SettingsStore: ObservableObject {
         persistMenuBarPreferences()
     }
 
+    func setEventListMode(_ mode: EventListMode) {
+        var prefs = menuBarPreferences
+        prefs.eventListMode = mode
+        menuBarPreferences = prefs
+        persistMenuBarPreferences()
+    }
+
     func setShowUpcomingSection(_ enabled: Bool) {
         var prefs = menuBarPreferences
         prefs.showUpcomingSection = enabled

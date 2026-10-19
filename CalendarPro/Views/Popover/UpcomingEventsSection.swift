@@ -1,16 +1,8 @@
 import SwiftUI
 import EventKit
 
-// Collapsible "All Events" popover section. UpcomingSnapshot groups the
-// unified CalendarItem list by day (pure function, unit-testable);
-// UpcomingEventsSection renders the collapsible header, day headers and
-// items, and wires count-based paging (bottom sentinel auto-loads the next
-// future page, the top entry row loads past pages, pagination resets and
-// scroll-to-top are driven by the reset generation).
-// Inputs: [CalendarItem] assembled per page by RootPopoverView, current
-// time (TimeRefreshCoordinator), paging-exhaustion and reset-generation flags.
-// Outputs: day-ascending snapshot struct / the section view inside the popover.
-// Depends on: EventKit (EKEvent/EKReminder), SwiftUI, AppLocalization (L/LF).
+// Overview content inside the shared event section. Pagination and scroll
+// position reset together when the overview is opened or its data changes.
 
 struct UpcomingDayGroup: Identifiable {
     let id: String
@@ -112,8 +104,7 @@ struct UpcomingSnapshot {
 
 struct UpcomingEventsSection: View {
     private enum Metrics {
-        // Content area only (header row excluded); matches the board branch
-        // cap so expanding the section never stretches the whole popover
+        // Keep multi-date browsing inside the popover's available height.
         static let expandedMaxHeight: CGFloat = 240
         // Scroll-to-top anchor id (view-internal only)
         static let topAnchorID = "upcomingEventsTopAnchor"
@@ -124,13 +115,9 @@ struct UpcomingEventsSection: View {
     let isLoadingFuture: Bool
     let hasMorePast: Bool
     let hasMoreFuture: Bool
-    let defaultExpanded: Bool
     // Bumped on every pagination reset; the section scrolls back to its top
     // anchor because data resets leave stale scroll offsets behind
     let resetGeneration: Int
-    // Bumped by PopoverController on every show; drives the expansion reset
-    // on popover reopen (view instances survive reuse, onAppear does not)
-    let presentationGeneration: Int
     let timeRefreshCoordinator: TimeRefreshCoordinator
     let selectedEventIdentifier: String?
     let onLoadMorePast: () -> Void
@@ -139,113 +126,18 @@ struct UpcomingEventsSection: View {
     let onOpenReminder: (EKReminder) -> Void
     let onToggleReminder: (EKReminder) -> Void
 
-    // Expansion state lives in the view: initialized from the default-expanded
-    // setting and re-applied on every popover presentation generation bump
-    // (view instances survive popover reuse, so State initial values only
-    // apply on first creation)
-    @State private var isExpanded: Bool
-
-    /// Explicit initializer: inputs are passed through CalendarPopoverView;
-    /// `defaultExpanded` seeds the collapse state.
-    init(
-        items: [CalendarItem],
-        isLoadingPast: Bool,
-        isLoadingFuture: Bool,
-        hasMorePast: Bool,
-        hasMoreFuture: Bool,
-        defaultExpanded: Bool,
-        resetGeneration: Int,
-        presentationGeneration: Int,
-        timeRefreshCoordinator: TimeRefreshCoordinator,
-        selectedEventIdentifier: String?,
-        onLoadMorePast: @escaping () -> Void,
-        onLoadMoreFuture: @escaping () -> Void,
-        onSelectEvent: @escaping (EKEvent) -> Void,
-        onOpenReminder: @escaping (EKReminder) -> Void,
-        onToggleReminder: @escaping (EKReminder) -> Void
-    ) {
-        self.items = items
-        self.isLoadingPast = isLoadingPast
-        self.isLoadingFuture = isLoadingFuture
-        self.hasMorePast = hasMorePast
-        self.hasMoreFuture = hasMoreFuture
-        self.defaultExpanded = defaultExpanded
-        self.resetGeneration = resetGeneration
-        self.presentationGeneration = presentationGeneration
-        self.timeRefreshCoordinator = timeRefreshCoordinator
-        self.selectedEventIdentifier = selectedEventIdentifier
-        self.onLoadMorePast = onLoadMorePast
-        self.onLoadMoreFuture = onLoadMoreFuture
-        self.onSelectEvent = onSelectEvent
-        self.onOpenReminder = onOpenReminder
-        self.onToggleReminder = onToggleReminder
-        _isExpanded = State(initialValue: defaultExpanded)
-    }
-
     var body: some View {
-        // Single evaluation in body: header count and expanded content share
-        // one grouping result, so repeated computed-property access cannot
-        // re-sort and re-group per access
         let snapshot = UpcomingSnapshot.make(
             items: items,
             now: timeRefreshCoordinator.currentDate,
             calendar: .autoupdatingCurrent
         )
 
-        return VStack(alignment: .leading, spacing: 8) {
-            headerButton(countText: countText(for: snapshot))
-
-            if isExpanded {
-                expandedContent(snapshot)
-                    .frame(maxHeight: Metrics.expandedMaxHeight)
-            }
-        }
-        // Popover reopen: re-apply the default-expanded setting via the
-        // presentation generation (view instances survive popover reuse);
-        // pagination resets arrive through RootPopoverView and reach this
-        // view as resetGeneration changes
-        .onChange(of: presentationGeneration) { _, _ in
-            isExpanded = defaultExpanded
-        }
+        return expandedContent(snapshot)
+            .frame(maxHeight: Metrics.expandedMaxHeight)
     }
 
-    private func headerButton(countText: String) -> some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isExpanded.toggle()
-            }
-        } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-
-                Text(L("All Events"))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .lineLimit(1)
-
-                Spacer(minLength: 12)
-
-                Text(countText)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("calendar-popover-upcoming-toggle")
-    }
-
-    private func countText(for snapshot: UpcomingSnapshot) -> String {
-        if isLoadingPast || isLoadingFuture {
-            return L("Loading")
-        }
-        return LF("%d items", snapshot.totalItemCount)
-    }
-
-    /// Expanded content: day-grouped scrolling list with count-based paging
+    /// Day-grouped scrolling list with count-based paging
     /// (bottom sentinel auto-loads the next future page; past pages load via
     /// the explicit top entry row). The empty-state text stays inside the
     /// ScrollView so the past-direction entry row remains reachable when the

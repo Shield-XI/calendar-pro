@@ -157,6 +157,29 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(store.menuBarPreferences.enabledReminderCalendarIDs.isEmpty)
     }
 
+    func testEventListModePersistsAndRestoresWhenViewIsReenabled() {
+        let userDefaults = makeIsolatedUserDefaults()
+        let store = makeStore(userDefaults: userDefaults)
+        store.setEventListMode(.overview)
+        store.setUpcomingDayLimit(180)
+
+        let reloaded = makeStore(userDefaults: userDefaults)
+        XCTAssertEqual(reloaded.menuBarPreferences.eventListMode, .overview)
+        XCTAssertEqual(reloaded.menuBarPreferences.effectiveEventListMode, .overview)
+        XCTAssertEqual(reloaded.menuBarPreferences.upcomingDayLimit, 180)
+
+        reloaded.setShowUpcomingSection(false)
+        let fallbackStore = makeStore(userDefaults: userDefaults)
+        XCTAssertEqual(fallbackStore.menuBarPreferences.eventListMode, .overview)
+        XCTAssertEqual(fallbackStore.menuBarPreferences.effectiveEventListMode, .day)
+
+        fallbackStore.setShowUpcomingSection(true)
+        let restoredStore = makeStore(userDefaults: userDefaults)
+        XCTAssertEqual(restoredStore.menuBarPreferences.effectiveEventListMode, .overview)
+        XCTAssertEqual(restoredStore.menuBarPreferences.upcomingDayLimit, 180)
+        XCTAssertTrue(restoredStore.menuBarPreferences.showRemindersBoard)
+    }
+
     func testUpcomingAndBoardPreferencesPersistIndependently() {
         let userDefaults = makeIsolatedUserDefaults()
         let store = makeStore(userDefaults: userDefaults)

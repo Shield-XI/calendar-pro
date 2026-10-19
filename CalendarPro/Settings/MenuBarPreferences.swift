@@ -34,6 +34,20 @@ enum WeekStart: String, Codable, CaseIterable {
     case monday
 }
 
+enum EventListMode: String, Codable, CaseIterable, Identifiable {
+    case day
+    case overview
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .day: return L("Event View Day")
+        case .overview: return L("Event View Overview")
+        }
+    }
+}
+
 enum PomodoroMenuBarStyle: String, Codable, CaseIterable, Identifiable {
     case countdown
     case progress
@@ -191,6 +205,20 @@ struct MenuBarPreferences: Codable, Equatable {
     var upcomingDefaultExpanded: Bool = true
     var upcomingEnabledCalendarIDs: [String]
     var upcomingEnabledReminderCalendarIDs: [String]
+    var eventListMode: EventListMode = .day
+
+    var effectiveEventListMode: EventListMode? {
+        switch eventListMode {
+        case .day where showEvents:
+            return .day
+        case .overview where showUpcomingSection:
+            return .overview
+        default:
+            if showEvents { return .day }
+            if showUpcomingSection { return .overview }
+            return nil
+        }
+    }
 
     var requiresSecondRefresh: Bool {
         tokens.contains { $0.token == .time && $0.isEnabled && $0.style == .full }
@@ -357,6 +385,7 @@ extension MenuBarPreferences {
         case upcomingDefaultExpanded
         case upcomingEnabledCalendarIDs
         case upcomingEnabledReminderCalendarIDs
+        case eventListMode
     }
 
     init(from decoder: Decoder) throws {
@@ -420,7 +449,10 @@ extension MenuBarPreferences {
             upcomingIncludeReminders: try container.decodeIfPresent(Bool.self, forKey: .upcomingIncludeReminders) ?? true,
             upcomingDefaultExpanded: try container.decodeIfPresent(Bool.self, forKey: .upcomingDefaultExpanded) ?? true,
             upcomingEnabledCalendarIDs: try container.decodeIfPresent([String].self, forKey: .upcomingEnabledCalendarIDs) ?? [],
-            upcomingEnabledReminderCalendarIDs: try container.decodeIfPresent([String].self, forKey: .upcomingEnabledReminderCalendarIDs) ?? []
+            upcomingEnabledReminderCalendarIDs: try container.decodeIfPresent([String].self, forKey: .upcomingEnabledReminderCalendarIDs) ?? [],
+            eventListMode: EventListMode(
+                rawValue: try container.decodeIfPresent(String.self, forKey: .eventListMode) ?? ""
+            ) ?? .day
         )
     }
 
@@ -485,5 +517,6 @@ extension MenuBarPreferences {
         try container.encode(upcomingDefaultExpanded, forKey: .upcomingDefaultExpanded)
         try container.encode(upcomingEnabledCalendarIDs, forKey: .upcomingEnabledCalendarIDs)
         try container.encode(upcomingEnabledReminderCalendarIDs, forKey: .upcomingEnabledReminderCalendarIDs)
+        try container.encode(eventListMode, forKey: .eventListMode)
     }
 }

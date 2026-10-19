@@ -76,6 +76,41 @@ final class MenuBarPreferencesTests: XCTestCase {
         XCTAssertTrue(prefs.upcomingEnabledReminderCalendarIDs.isEmpty)
     }
 
+    func testEventListModeUsesEnabledViewWithoutReplacingPreferredMode() {
+        var preferences = MenuBarPreferences.default
+        XCTAssertEqual(preferences.eventListMode, .day)
+        XCTAssertEqual(preferences.effectiveEventListMode, .day)
+
+        preferences.eventListMode = .overview
+        XCTAssertEqual(preferences.effectiveEventListMode, .overview)
+
+        preferences.showUpcomingSection = false
+        XCTAssertEqual(preferences.effectiveEventListMode, .day)
+        XCTAssertEqual(preferences.eventListMode, .overview)
+
+        preferences.showEvents = false
+        XCTAssertNil(preferences.effectiveEventListMode)
+
+        preferences.showUpcomingSection = true
+        preferences.eventListMode = .day
+        XCTAssertEqual(preferences.effectiveEventListMode, .overview)
+
+        preferences.showEvents = true
+        XCTAssertEqual(preferences.effectiveEventListMode, .day)
+    }
+
+    func testEventListModeDecodesOldAndUnknownValuesAsDay() throws {
+        let encoded = try JSONEncoder().encode(MenuBarPreferences.default)
+        var stored = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        stored.removeValue(forKey: "eventListMode")
+        let legacyData = try JSONSerialization.data(withJSONObject: stored)
+        XCTAssertEqual(try JSONDecoder().decode(MenuBarPreferences.self, from: legacyData).eventListMode, .day)
+
+        stored["eventListMode"] = "future-mode"
+        let unknownData = try JSONSerialization.data(withJSONObject: stored)
+        XCTAssertEqual(try JSONDecoder().decode(MenuBarPreferences.self, from: unknownData).eventListMode, .day)
+    }
+
     func testLegacyDecodingDefaultsUpcomingSectionFields() throws {
         let legacyJSON = """
         {
@@ -95,6 +130,7 @@ final class MenuBarPreferencesTests: XCTestCase {
         let decoded = try JSONDecoder().decode(MenuBarPreferences.self, from: legacyJSON)
 
         XCTAssertTrue(decoded.showUpcomingSection)
+        XCTAssertEqual(decoded.eventListMode, .day)
         XCTAssertEqual(decoded.upcomingDayLimit, 90)
         XCTAssertTrue(decoded.upcomingIncludeReminders)
         XCTAssertTrue(decoded.upcomingDefaultExpanded)

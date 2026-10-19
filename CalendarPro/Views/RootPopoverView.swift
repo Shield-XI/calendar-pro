@@ -51,6 +51,7 @@ struct RootPopoverView: View {
 
     @State private var itemsForSelectedDate: [CalendarItem] = []
     @State private var isLoadingEvents: Bool = false
+    @State private var eventsRequestID = UUID()
     @State private var boardReminders: [EKReminder] = []
     @State private var upcomingItems: [CalendarItem] = []
     @State private var isLoadingUpcomingPast: Bool = false
@@ -222,7 +223,7 @@ struct RootPopoverView: View {
                 loadBoard()
                 resetUpcomingPaginationAndLoadFirstPage()
             }
-            .onReceive(settingsStore.$menuBarPreferences.dropFirst()) { _ in
+            .onChange(of: settingsStore.menuBarPreferences) { _, _ in
                 refreshEventsForCurrentSelection(selectingTodayIfNeeded: true)
                 resetUpcomingPaginationAndLoadFirstPage()
                 refreshInfoStrips()
@@ -282,14 +283,13 @@ struct RootPopoverView: View {
             showEvents: settingsStore.menuBarPreferences.showEvents,
             emptyStateText: settingsStore.menuBarPreferences.eventListEmptyStateText,
             showUpcomingSection: settingsStore.menuBarPreferences.showUpcomingSection,
+            eventListMode: settingsStore.menuBarPreferences.effectiveEventListMode,
             upcomingItems: upcomingItems,
             isLoadingUpcomingPast: isLoadingUpcomingPast,
             isLoadingUpcomingFuture: isLoadingUpcomingFuture,
             hasMoreUpcomingPast: upcomingPastCursor != nil,
             hasMoreUpcomingFuture: upcomingFutureCursor != nil,
-            upcomingDefaultExpanded: settingsStore.menuBarPreferences.upcomingDefaultExpanded,
             upcomingResetGeneration: upcomingResetGeneration,
-            upcomingPresentationGeneration: viewModel.popoverPresentationGeneration,
             selectedDate: viewModel.selectedDate,
             items: itemsForSelectedDate,
             selectedEventIdentifier: viewModel.selectedEventIdentifier,
@@ -354,6 +354,10 @@ struct RootPopoverView: View {
             },
             onCreateEventAt: { timeRange in
                 handleCreateItem(initialTimeRange: timeRange)
+            },
+            onSelectEventListMode: { mode in
+                dismissEventDetail()
+                settingsStore.setEventListMode(mode)
             },
             onLoadMoreUpcomingPast: handleLoadMoreUpcomingPast,
             onLoadMoreUpcomingFuture: handleLoadMoreUpcomingFuture,
@@ -562,7 +566,7 @@ struct RootPopoverView: View {
     private func loadEvents(for date: Date) {
         let preferences = settingsStore.menuBarPreferences
 
-        guard preferences.showEvents else {
+        guard preferences.effectiveEventListMode == .day else {
             clearLoadedEvents()
             return
         }
@@ -581,6 +585,8 @@ struct RootPopoverView: View {
         }
 
         isLoadingEvents = true
+        let requestID = UUID()
+        eventsRequestID = requestID
         let requestedDate = date
         Task {
             let items = await eventService.fetchCalendarItems(
@@ -591,6 +597,8 @@ struct RootPopoverView: View {
                 showReminders: preferences.showReminders
             )
             await MainActor.run {
+                guard eventsRequestID == requestID,
+                      settingsStore.menuBarPreferences.effectiveEventListMode == .day else { return }
                 guard viewModel.selectedDate == requestedDate else { return }
                 itemsForSelectedDate = items
                 syncSelectedEvent(with: items)
@@ -602,7 +610,7 @@ struct RootPopoverView: View {
     private func refreshEventsForCurrentSelection(selectingTodayIfNeeded: Bool = false) {
         let preferences = settingsStore.menuBarPreferences
 
-        guard preferences.showEvents else {
+        guard preferences.effectiveEventListMode == .day else {
             clearLoadedEvents()
             return
         }
@@ -623,6 +631,7 @@ struct RootPopoverView: View {
     }
 
     private func clearLoadedEvents() {
+        eventsRequestID = UUID()
         itemsForSelectedDate = []
         isLoadingEvents = false
         viewModel.clearSelectedEvent()
@@ -638,7 +647,7 @@ struct RootPopoverView: View {
     private func resetUpcomingPaginationAndLoadFirstPage() {
         let preferences = settingsStore.menuBarPreferences
 
-        guard preferences.showUpcomingSection else {
+        guard preferences.effectiveEventListMode == .overview else {
             clearLoadedUpcoming()
             return
         }
@@ -678,6 +687,7 @@ struct RootPopoverView: View {
     /// after a reset are dropped by the per-direction race guard.
     private func loadUpcomingPage(direction: UpcomingPageDirection) {
         let preferences = settingsStore.menuBarPreferences
+        guard preferences.effectiveEventListMode == .overview else { return }
         guard let startCursor = direction == .future
             ? upcomingFutureCursor
             : upcomingPastCursor else {
@@ -730,6 +740,11 @@ struct RootPopoverView: View {
             while !isExhausted,
                   collected.count < RootPopoverView.upcomingPageSize,
                   queriedWindowCount < RootPopoverView.upcomingPageMaxWindows {
+                let activeRequestID = direction == .past
+                    ? upcomingPastRequestID
+                    : upcomingFutureRequestID
+                guard activeRequestID == requestID,
+                      settingsStore.menuBarPreferences.effectiveEventListMode == .overview else { return }
                 // Future window [cursor, cursor+30d) clipped to the user
                 // limit; past window [cursor-30d, cursor), cursor = upper
                 // bound

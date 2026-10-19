@@ -24,7 +24,7 @@ struct UpcomingEventsSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                GroupBox(L("All Events")) {
+                GroupBox(L("Event Overview")) {
                     recentEventsSection
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -52,13 +52,6 @@ struct UpcomingEventsSettingsView: View {
         Binding(
             get: { store.menuBarPreferences.upcomingIncludeReminders },
             set: { store.setUpcomingIncludeReminders($0) }
-        )
-    }
-
-    private var upcomingDefaultExpandedBinding: Binding<Bool> {
-        Binding(
-            get: { store.menuBarPreferences.upcomingDefaultExpanded },
-            set: { store.setUpcomingDefaultExpanded($0) }
         )
     }
 
@@ -96,27 +89,19 @@ struct UpcomingEventsSettingsView: View {
 
     private var recentEventsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle(L("Show All Events Section"), isOn: showUpcomingSectionBinding)
+            Toggle(L("Show Overview View"), isOn: showUpcomingSectionBinding)
                 .toggleStyle(.checkbox)
 
-            Text(L("Show All Events Section Description"))
+            Text(L("Overview View Description"))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             if store.menuBarPreferences.showUpcomingSection {
-                Toggle(L("Expand by Default"), isOn: upcomingDefaultExpandedBinding)
-                    .toggleStyle(.checkbox)
-
-                Text(L("Expand by Default Description"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 HStack {
-                    Text(L("All Events Day Limit"))
+                    Text(L("Overview Future Range"))
                     Spacer()
-                    Picker(L("All Events Day Limit"), selection: upcomingDayLimitBinding) {
+                    Picker(L("Overview Future Range"), selection: upcomingDayLimitBinding) {
                         Text(LF("%d days", 30)).tag(30)
                         Text(LF("%d days", 90)).tag(90)
                         Text(LF("%d days", 180)).tag(180)
@@ -126,7 +111,7 @@ struct UpcomingEventsSettingsView: View {
                     .labelsHidden()
                 }
 
-                Toggle(L("Include Reminders in All Events"), isOn: upcomingIncludeRemindersBinding)
+                Toggle(L("Include Reminders in Overview"), isOn: upcomingIncludeRemindersBinding)
                     .toggleStyle(.checkbox)
 
                 upcomingCalendarSourcesSection
@@ -150,7 +135,7 @@ struct UpcomingEventsSettingsView: View {
                 }
             }
         } else {
-            Text(L("Choose Calendars for All Events"))
+            Text(L("Choose Calendars for Overview"))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
 
@@ -199,7 +184,7 @@ struct UpcomingEventsSettingsView: View {
                 }
             }
         } else {
-            Text(L("Choose Reminder Lists for All Events"))
+            Text(L("Choose Reminder Lists for Overview"))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
 
